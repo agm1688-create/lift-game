@@ -37,3 +37,4 @@ export const sfx = {
   bark() { tone(600, 0.08, 'sawtooth', 0.15, 0, 380); tone(650, 0.1, 'sawtooth', 0.15, 0.15, 400); },
   whoosh() { noise(1.5, 0.3, 400); },
 };
+export const audioCtx = () => ctx;

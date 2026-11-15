@@ -28,12 +28,13 @@ const wss = new WebSocketServer({ server });
 
 // ---------- 世界狀態 ----------
 const MAX_FLOOR = 10000;
-const lifts = [0, 1].map(id => ({ id, from: 1, to: 1, t0: 0, dur: 0, doorStart: 0, doorEnd: 0, emerg: false }));
+// 0、1 = 大廈 Lift（1–10000 樓）；2、3 = 柏熙酒店 Lift（1–20 樓）
+const lifts = [0, 1, 2, 3].map(id => ({ id, from: 1, to: 1, t0: 0, dur: 0, doorStart: 0, doorEnd: 0, emerg: false, hotel: id >= 2 }));
 const world = { toiletLight: false };
 const players = new Map(); // id -> {ws, name, look, st}
 let nextId = 1;
 
-function travelTime(a, b) { return (3 + 7 * Math.log10(Math.abs(a - b) + 1)) * 1000; }
+function travelTime(a, b, hotel) { return hotel ? (2 + 0.9 * Math.abs(a - b)) * 1000 : (3 + 7 * Math.log10(Math.abs(a - b) + 1)) * 1000; }
 function arrival(L) { return L.t0 + L.dur; }
 function moving(L, now) { return now < arrival(L); }
 
@@ -52,13 +53,13 @@ function liftCmd(L, m, now) {
       break;
     case 'goto':
     case 'call': {
-      let f = m.cmd === 'call' ? 1 : Math.round(Number(m.floor));
-      if (!(f >= 0 && f <= MAX_FLOOR) || busy) break;
+      let f = m.cmd === 'call' && !L.hotel ? 1 : Math.round(Number(m.floor));
+      if (!(L.hotel ? f >= 1 && f <= 20 : f >= 0 && f <= MAX_FLOOR) || busy) break;
       let depart = now;
       if (now < L.doorEnd) { L.doorEnd = Math.max(now + 1000, L.doorStart + 1000); depart = L.doorEnd; }
       if (f === L.to) { if (m.cmd === 'call') liftCmd(L, { cmd: 'open' }, now); break; }
-      L.from = L.to; L.to = f; L.t0 = depart; L.dur = travelTime(L.from, f);
-      if (m.cmd === 'call') { L.doorStart = arrival(L) + 300; L.doorEnd = L.doorStart + 8000; }
+      L.from = L.to; L.to = f; L.t0 = depart; L.dur = travelTime(L.from, f, L.hotel);
+      if (m.cmd === 'call' || L.hotel) { L.doorStart = arrival(L) + 300; L.doorEnd = L.doorStart + 8000; }
       break;
     }
     case 'emerg': L.emerg = !L.emerg; break;

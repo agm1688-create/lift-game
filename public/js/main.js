@@ -9,6 +9,9 @@ import { initAudio, sfx } from './audio.js';
 import { altOfFloor, layerName, fmtAlt, floorLabel, MAX_FLOOR } from './alt.js';
 import { buildShops } from './shops.js';
 import { buildNPCs } from './npcs.js';
+import { buildHotel, roomDoor, ROOM_TYPES } from './hotel.js';
+import { buildPark } from './park.js';
+import { playMusic, currentMusic, TRACKS } from './music.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -74,7 +77,7 @@ function startGame(myName) {
 
   // ---------- 玩家狀態 ----------
   const SPAWN = new V3(0, 0, 8);
-  const P = { pos: SPAWN.clone(), vy: 0, face: Math.PI, grounded: true, ride: -1, scale: 1, held: null, inv: new Set(), gold: 0, dog: false, fallFrom: 0, spraying: false, anim: 0, wifi: false };
+  const P = { pos: SPAWN.clone(), vy: 0, face: Math.PI, grounded: true, ride: -1, rideObj: null, seat: null, scale: 1, held: null, inv: new Set(), gold: 0, dog: false, fallFrom: 0, spraying: false, anim: 0, wifi: false };
   let camYaw = 0, camPitch = 0.32, camDist = 6, firstPerson = false;
   const toast = (msg, ms = 2200) => { const t = $('toast'); t.textContent = msg; t.style.opacity = 1; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.opacity = 0, ms); };
 
@@ -102,12 +105,37 @@ function startGame(myName) {
   };
   api.openShop = (key, name, colors) => openShop(key, name, colors);
   api.openBank = name => openBank(name);
+  api.sfx = sfx; api.toast = (m, ms) => toast(m, ms);
+  api.hotelCheckin = () => openCheckin();
+  api.sleep = () => doSleep();
+  api.boardRide = i => boardRide(i);
   const world = buildWorld(scene, api);
   const lifts = buildLifts(scene, api);
   const shops = buildShops(scene, api, CATALOG.SHOPS);
   const npcs = buildNPCs(scene, shops.spots);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables);
+  const hotel = buildHotel(scene, api);
+  const park = buildPark(scene, api);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables);
+  // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
+  const GRID = 8, grid = new Map(), bigCols = [];
+  for (const c of staticCols) {
+    if (c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200) { bigCols.push(c); continue; }
+    for (let gx = Math.floor(c.min[0] / GRID); gx <= Math.floor(c.max[0] / GRID); gx++)
+      for (let gz = Math.floor(c.min[2] / GRID); gz <= Math.floor(c.max[2] / GRID); gz++) {
+        const k = gx * 100003 + gz; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(c);
+      }
+  }
+  let colStamp = 0;
+  function nearCols(x, z, r, withBig = true) {
+    colStamp++; const out = withBig ? bigCols.slice() : [];
+    for (let gx = Math.floor((x - r) / GRID); gx <= Math.floor((x + r) / GRID); gx++)
+      for (let gz = Math.floor((z - r) / GRID); gz <= Math.floor((z + r) / GRID); gz++) {
+        const l = grid.get(gx * 100003 + gz); if (!l) continue;
+        for (const c of l) if (c._s !== colStamp) { c._s = colStamp; out.push(c); }
+      }
+    return out;
+  }
   const camBlockers = [];
   scene.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && !o.material.transparent && o.position.y < 20 && o.position.y > -10) { o.geometry.computeBoundingBox(); const s = o.geometry.boundingBox.getSize(new V3()); if (Math.max(s.x, s.y, s.z) > 1.5 && Math.min(s.x, s.y, s.z) < 0.5 && o.parent === scene) camBlockers.push(o); } });
   function setToiletLight(on) { toiletLight = on; world.setToiletLight(on); }
@@ -377,7 +405,7 @@ function startGame(myName) {
   cv.addEventListener('wheel', e => { camDist = Math.min(40, Math.max(1.5, camDist * (1 + Math.sign(e.deltaY) * 0.1))); $('zoomRange').value = camDist; e.preventDefault(); }, { passive: false });
   $('jump').addEventListener('pointerdown', e => { jump(); e.preventDefault(); });
   $('act').addEventListener('pointerdown', e => { doAct(); e.preventDefault(); });
-  function jump() { if (P.grounded) { P.vy = 8; P.grounded = false; P.ride = -1; } }
+  function jump() { if (P.seat) return leaveRide(); if (P.grounded) { P.vy = 8; P.grounded = false; P.ride = -1; P.rideObj = null; } }
 
   // ---------- 互動 ----------
   let curInter = null;
@@ -393,6 +421,7 @@ function startGame(myName) {
   }
   function useLabel() { return { ext: '🧯 噴滅火筒', phone: '📱 開手機', router: P.wifi ? '📶 熄 Wi-Fi' : '📶 開 Wi-Fi' }[P.held]; }
   function doAct() {
+    if (P.seat) return leaveRide();
     if (curInter) { curInter.act(); return; }
     if (P.held === 'ext') { P.spraying = true; clearTimeout(doAct._s); doAct._s = setTimeout(() => P.spraying = false, 1200); sfx.spray(); }
     else if (P.held === 'phone') openPhone();
@@ -444,8 +473,8 @@ function startGame(myName) {
     if (i === 0) p.x -= m; else if (i === 1) p.x += m; else if (i === 2) p.z -= m; else p.z += m;
   }
   function physics(dt, mv) {
-    const cols = staticCols.concat(lifts.dynamicColliders());
-    if (P.ride >= 0) { const L = lifts.lifts[P.ride]; P.pos.y += L.y - L.prevY; }
+    const cols = nearCols(P.pos.x, P.pos.z, 3).concat(lifts.dynamicColliders(), hotel.dynamicColliders());
+    if (P.rideObj) P.pos.y += P.rideObj.y - P.rideObj.prevY;
     P.pos.x += mv.x * dt; P.pos.z += mv.z * dt;
     const prevY = P.pos.y;
     P.vy -= GRAV * dt;
@@ -460,10 +489,10 @@ function startGame(myName) {
     }
     const wasGrounded = P.grounded;
     if (bc && P.pos.y <= best + 0.001 && P.vy <= 0.01) {
-      P.pos.y = best; P.vy = 0; P.grounded = true; P.ride = bc.lift ?? -1;
+      P.pos.y = best; P.vy = 0; P.grounded = true; P.ride = bc.lift ?? -1; P.rideObj = bc.lift !== undefined ? lifts.lifts[bc.lift] : (bc.mv || null);
       if (!wasGrounded && P.fallFrom - best > 40) toast(`🪂 安全著陸！跌咗 ${fmtAlt(P.fallFrom - best)}`);
       P.fallFrom = best;
-    } else { P.grounded = false; P.ride = -1; if (P.pos.y > P.fallFrom) P.fallFrom = P.pos.y; }
+    } else { P.grounded = false; P.ride = -1; P.rideObj = null; if (P.pos.y > P.fallFrom) P.fallFrom = P.pos.y; }
     if (P.pos.y < -60) { api.teleport(SPAWN.x, 0, SPAWN.z); toast('返回出生點'); }
   }
 
@@ -487,7 +516,7 @@ function startGame(myName) {
   function onNet(m) {
     switch (m.t) {
       case 'welcome':
-        m.lifts.forEach((s, i) => lifts.lifts[i].state = s);
+        m.lifts.forEach((s, i) => i < 2 ? lifts.lifts[i].state = s : hotel.setState(i - 2, s));
         setToiletLight(m.world.toiletLight);
         m.players.forEach(p => { addRemote(p); voice.call(p.id); });
         toast(`歡迎 ${myName}！你有 Lift 1 同 Lift 2 嘅 Key 🔑`, 3500);
@@ -495,7 +524,7 @@ function startGame(myName) {
       case 'join': addRemote(m); toast(`👋 ${m.name} 入咗遊戲`); break;
       case 'leave': { const r = remotes.get(m.id); if (r) toast(`${r.name} 走咗`); removeRemote(m.id); break; }
       case 'snap': for (const id in m.p) { const r = remotes.get(+id); if (r) r.st = m.p[id]; } break;
-      case 'lifts': m.lifts.forEach((s, i) => lifts.lifts[i].state = s); break;
+      case 'lifts': m.lifts.forEach((s, i) => i < 2 ? lifts.lifts[i].state = s : hotel.setState(i - 2, s)); break;
       case 'world': setToiletLight(m.world.toiletLight); break;
       case 'ev': if (m.kind === 'boom') doBoom(m.lift); else if (m.kind === 'alarm') doAlarm(); break;
       case 'rtc': voice.onSignal(m.from, m.data); break;
@@ -504,7 +533,7 @@ function startGame(myName) {
   net.send({ t: 'hello', name: myName, look });
   setInterval(() => {
     const L = P.ride >= 0 ? lifts.lifts[P.ride] : null;
-    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.dog ? 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0 } });
+    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.dog ? 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0 } });
   }, 100);
 
   function dogFollow(dog, owner, face, dt) {
@@ -521,21 +550,124 @@ function startGame(myName) {
   let hudT = 0;
   function updateHUD(inCar) {
     const a = P.pos.y;
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    const inHotel = hotel.inside(P.pos);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
   }
 
+  // ================= 機動遊戲：上車 / 落車 =================
+  const seatP = new V3(), seatQ = new THREE.Quaternion(), seatS = new V3(), tmpUp = new V3(), tmpQ2 = new THREE.Quaternion(), tmpE = new THREE.Euler();
+  function seatWorld(o) { o.updateWorldMatrix(true, false); o.matrixWorld.decompose(seatP, seatQ, seatS); }
+  function sitPose(av, dt, thrill) {
+    animateAvatar(av, 0, dt); const u = av.userData;
+    u.body.position.y = -0.36; u.body.rotation.x = 0; u.legL.rotation.x = u.legR.rotation.x = -Math.PI / 2;
+    if (thrill) { u.armL.rotation.x = u.armR.rotation.x = -2.9; u.armL.rotation.z = 0.25; u.armR.rotation.z = -0.25; }
+    else { u.armL.rotation.x = u.armR.rotation.x = -0.6; }
+  }
+  let fpBeforeRide = false;
+  function boardRide(i) {
+    const r = park.rides[i]; if (!r) return;
+    const taken = new Set([...remotes.values()].filter(x => x.st?.sd && x.st.sd[0] === i).map(x => x.st.sd[1]));
+    const free = r.seats.map((_, k) => k).filter(k => !taken.has(k));
+    if (!free.length) return toast('坐滿咗，等陣先');
+    if (P.held) setHeld(P.held);
+    P.seat = { r: i, s: free[Math.floor(Math.random() * free.length)] };
+    fpBeforeRide = firstPerson; firstPerson = true; camYaw = 0; camPitch = 0; $('btnFP').classList.add('on');
+    sfx.whoosh(); toast(`🎢 ${r.name}：${r.info || ''}\n（撳「落車」或者「跳」離開；👁 可以轉第三身）`, 4000);
+  }
+  function leaveRide() {
+    const r = park.rides[P.seat.r]; P.seat = null;
+    api.teleport(r.board.exit[0], 0.05, r.board.exit[1]);
+    me.rotation.set(0, P.face, 0); me.userData.body.position.y = 0;
+    firstPerson = fpBeforeRide; camPitch = firstPerson ? 0 : 0.32; $('btnFP').classList.toggle('on', firstPerson);
+    toast('🚶 落咗車'); sfx.click();
+  }
+  // 鏡頭唔好穿牆（酒店房入面用第三身都得）
+  function camRayCols(o, d, max) {
+    let best = max;
+    for (const c of nearCols(o.x, o.z, max + 1, false)) {
+      if (c.max[1] - c.min[1] < 0.3 && c.max[1] < o.y - 0.5) continue;
+      let t0 = 0, t1 = best, ok = true;
+      for (let a = 0; a < 3 && ok; a++) {
+        const oa = a === 0 ? o.x : a === 1 ? o.y : o.z, da = a === 0 ? d.x : a === 1 ? d.y : d.z;
+        if (Math.abs(da) < 1e-8) { if (oa < c.min[a] || oa > c.max[a]) ok = false; continue; }
+        let n = (c.min[a] - oa) / da, f = (c.max[a] - oa) / da; if (n > f) [n, f] = [f, n];
+        t0 = Math.max(t0, n); t1 = Math.min(t1, f); if (t0 > t1) ok = false;
+      }
+      if (ok && t0 > 0.05) best = Math.min(best, Math.max(0.5, t0 - 0.3));
+    }
+    return best;
+  }
+
+  // ================= 柏熙酒店：Lift 面板、Check-in、瞓覺 =================
+  let hotelCar = null;
+  const hpKeys = $('hpKeys');
+  [...Array.from({ length: 20 }, (_, i) => [String(i + 1), i + 1]), ['🔓 開門', 'open'], ['關門', 'close']].forEach(([label, k]) => {
+    const b = document.createElement('button'); b.textContent = label; if (typeof k === 'string') { b.className = 'wide'; b.style.gridColumn = 'span ' + (k === 'open' ? 3 : 2); }
+    b.onclick = () => {
+      const c = hotelCar; if (!c) return; sfx.click();
+      if (k === 'open') return api.liftCmd(c.id, 'open');
+      if (k === 'close') return api.liftCmd(c.id, 'close');
+      if (c.moving) return toast('電梯行緊，等陣先');
+      if (Math.round(c.floor) === k) return api.liftCmd(c.id, 'open');
+      api.liftCmd(c.id, 'goto', k); toast(k === 20 ? '👑 去 20 樓總統套房' : `🛗 去 ${k} 樓`);
+    };
+    hpKeys.appendChild(b);
+  });
+  const PRICES = { single: 1880, double: 2680, suite: 68000 };
+  const RNAME = { single: '豪華單人房', double: '豪華雙人房', suite: '總統套房' };
+  function openCheckin() {
+    $('hmCash').textContent = `💵 你身上有 ${money(E.cash)}` + (E.room ? `｜你而家住緊 ${E.room.no} 號房（${RNAME[E.room.type]}）` : '');
+    $('hmMsg').textContent = ''; $('hotelModal').classList.remove('hidden'); sfx.click();
+  }
+  document.querySelectorAll('#hotelModal [data-room]').forEach(b => b.onclick = () => {
+    const type = b.dataset.room, price = PRICES[type];
+    if (E.cash < price) { sfx.error(); $('hmMsg').textContent = `💸 唔夠錢！要 ${money(price)}。可以去銀行賣金條或者提錢。`; return; }
+    let no;
+    if (type === 'suite') no = 2001;
+    else { const ks = ROOM_TYPES.map((t, k) => t === type ? k : -1).filter(k => k >= 0); no = (2 + Math.floor(Math.random() * 18)) * 100 + ks[Math.floor(Math.random() * ks.length)] + 1; }
+    E.cash = Math.round((E.cash - price) * 10) / 10; E.room = { no, type }; saveEcon(); showRoomMark(); sfx.pickup();
+    const fl = Math.floor(no / 100);
+    $('hmMsg').textContent = `✅ 入住成功！房號 ${no}（${RNAME[type]}）— 搭 Lift 或者行樓梯上 ${fl} 樓，跟住金色箭咀搵間房。`;
+    toast(`🔑 房卡：${no} 號房，${fl} 樓`, 3500);
+  });
+  $('hmClose').onclick = () => closeModal('hotelModal');
+  const roomMark = new THREE.Sprite(new THREE.SpriteMaterial({ map: TXsign('⬇ 你間房', '#ffd54f', '#3a2a10'), depthTest: false })); roomMark.scale.set(2.4, 0.6, 1); roomMark.visible = false; roomMark.renderOrder = 5; scene.add(roomMark);
+  function TXsign(text, bg, fg) { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d'); g.fillStyle = bg; g.beginPath(); g.roundRect(4, 4, 248, 56, 24); g.fill(); g.fillStyle = fg; g.font = 'bold 32px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 34); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+  function showRoomMark() { const p = E.room && roomDoor(E.room.no); roomMark.visible = !!p; if (p) { roomMark.position.copy(p); roomMark.userData.y = p.y; } }
+  showRoomMark();
+  function doSleep() {
+    if (!E.room) { sfx.error(); return toast('🛎 要先去 1 樓大堂接待處 Check-in 先可以瞓喎'); }
+    const f = $('flash'); f.style.transition = 'opacity 1s'; f.style.background = '#000'; f.style.opacity = 1;
+    toast('😴 Zzz… Zzz…', 2500);
+    setTimeout(() => { f.style.opacity = 0; toast('☀️ 瞓醒啦！精神晒～', 2500); setTimeout(() => f.style.background = '', 1100); }, 2600);
+  }
+
+  // ================= 背景音樂（3 首揀）=================
+  const musicBox = $('musicBox');
+  const mOpts = [['🔇 關', 0], ...TRACKS.map((t, i) => [`🎵 ${i + 1}. ${t.name}`, i + 1])];
+  function renderMusic() {
+    musicBox.innerHTML = '';
+    mOpts.forEach(([label, i]) => { const b = document.createElement('button'); b.textContent = label; if (currentMusic() === i) b.className = 'on'; b.onclick = () => { playMusic(i); store.set('music', i); renderMusic(); $('btnMusic').classList.toggle('on', i > 0); }; musicBox.appendChild(b); });
+  }
+  $('btnMusic').onclick = () => { musicBox.classList.toggle('hidden'); renderMusic(); sfx.click(); };
+  { const m = store.get('music', 1); playMusic(m); $('btnMusic').classList.toggle('on', m > 0); }
+
+  if (location.search.includes('debug')) window.__g = { P, park, hotel, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
   const ray = new THREE.Raycaster();
   let elapsed = 0;
-  function loop() {
-    requestAnimationFrame(loop);
+  function loop() { requestAnimationFrame(loop); frame(); }
+  function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); elapsed += dt;
     const T = net.now();
     lifts.update(dt, T);
+    hotel.update(dt, T, P.pos);
+    park.update(T / 1000);
 
     // 移動輸入
     let ix = joy.x, iy = joy.y;
@@ -546,11 +678,19 @@ function startGame(myName) {
     const speed = 7.5 * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     if (mv.lengthSq() > 0.01) { const tf = Math.atan2(mv.x, mv.z); let df = tf - P.face; df = Math.atan2(Math.sin(df), Math.cos(df)); P.face += df * Math.min(1, dt * 14); }
-    physics(dt, mv);
-    P.anim = !P.grounded && P.vy < -12 ? 2 : (mv.lengthSq() > 0.01 ? 1 : 0);
-
-    me.position.copy(P.pos); me.rotation.y = P.face; me.scale.setScalar(P.scale);
-    animateAvatar(me, P.anim, dt, Math.min(1.4, im + 0.3));
+    if (P.seat) {
+      // 坐緊機動遊戲：位置 / 方向跟座位
+      const r = park.rides[P.seat.r];
+      seatWorld(r.seats[P.seat.s]);
+      P.pos.copy(seatP); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.anim = 0;
+      me.position.copy(seatP); me.quaternion.copy(seatQ); me.scale.setScalar(P.scale);
+      sitPose(me, dt, r.thrill);
+    } else {
+      physics(dt, mv);
+      P.anim = !P.grounded && P.vy < -12 ? 2 : (mv.lengthSq() > 0.01 ? 1 : 0);
+      me.position.copy(P.pos); me.rotation.set(0, P.face, 0); me.scale.setScalar(P.scale);
+      animateAvatar(me, P.anim, dt, Math.min(1.4, im + 0.3));
+    }
     dogFollow(myDog, P.pos, P.face, dt);
     if (P.spraying) emitSpray(me);
 
@@ -562,8 +702,14 @@ function startGame(myName) {
       if (r.pos.distanceTo(tgt) > 8 || s.rl >= 0) { r.pos.x += (tgt.x - r.pos.x) * Math.min(1, dt * 12); r.pos.z += (tgt.z - r.pos.z) * Math.min(1, dt * 12); r.pos.y = tgt.y; if (r.pos.distanceTo(tgt) > 8) r.pos.copy(tgt); }
       else r.pos.lerp(tgt, Math.min(1, dt * 12));
       let df = s.r - r.face; df = Math.atan2(Math.sin(df), Math.cos(df)); r.face += df * Math.min(1, dt * 12);
-      r.av.position.copy(r.pos); r.av.rotation.y = r.face; r.av.scale.setScalar(s.sc || 1);
-      animateAvatar(r.av, s.a, dt); attachHeld(r.av, s.h);
+      const rr = s.sd && park.rides[s.sd[0]], rs = rr && rr.seats[s.sd[1]];
+      if (rs) {
+        seatWorld(rs); r.pos.copy(seatP); r.av.position.copy(seatP); r.av.quaternion.copy(seatQ); r.av.scale.setScalar(s.sc || 1);
+        sitPose(r.av, dt, rr.thrill); attachHeld(r.av, null);
+      } else {
+        r.av.position.copy(r.pos); r.av.rotation.set(0, r.face, 0); r.av.scale.setScalar(s.sc || 1);
+        animateAvatar(r.av, s.a, dt); attachHeld(r.av, s.h);
+      }
       r.tag.position.set(r.pos.x, r.pos.y + 2.15 * (s.sc || 1), r.pos.z);
       if (!!s.v !== r.voiceOn) { r.voiceOn = !!s.v; scene.remove(r.tag); r.tag = nameTag(r.name, r.voiceOn); scene.add(r.tag); }
       if (!!s.dg !== r.dog.visible) syncDog(r.dog, !!s.dg, r.pos);
@@ -589,8 +735,8 @@ function startGame(myName) {
     } else { fxMat.opacity = 0; fxLight.intensity = 0; }
 
     // 互動提示
-    curInter = findInteract();
-    const lbl = curInter ? curInter.label() : (P.held ? useLabel() : null);
+    curInter = P.seat ? null : findInteract();
+    const lbl = P.seat ? '🚪 落車' : curInter ? curInter.label() : (P.held ? useLabel() : null);
     $('act').classList.toggle('hidden', !lbl); if (lbl && $('act').textContent !== lbl) $('act').textContent = lbl;
 
     // 電梯面板
@@ -600,6 +746,12 @@ function startGame(myName) {
       const mvg = isMoving(inCar.state, T);
       $('lpDisp').textContent = (mvg ? (inCar.state.to > inCar.state.from ? '▲ ' : '▼ ') : '') + floorLabel(Math.round(inCar.floor)) + (inCar.door > 0.5 ? ' 🚪' : '');
     }
+
+    // 酒店 Lift 面板
+    const hCar = hotel.insideCar(P.pos);
+    if (hCar !== hotelCar) { hotelCar = hCar; $('hotelPanel').classList.toggle('hidden', !hCar); if (hCar) $('hpTitle').textContent = `柏熙酒店 ${hCar.id - 1}號 Lift（1–20 樓）`; }
+    if (hCar) $('hpDisp').textContent = (hCar.moving ? (hCar.state.to > hCar.state.from ? '▲ ' : '▼ ') : '') + Math.round(hCar.floor) + (hCar.door > 0.5 ? ' 🚪' : '');
+    if (roomMark.visible) roomMark.position.y = roomMark.userData.y + 2.6 + Math.sin(elapsed * 3) * 0.15;
 
     // 室內判斷
     const tb = world.toiletBounds;
@@ -611,8 +763,13 @@ function startGame(myName) {
     // 鏡頭
     const target = new V3(P.pos.x, P.pos.y + 1.5 * P.scale, P.pos.z);
     const dir = new V3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
-    let look;
-    if (firstPerson) {
+    let look = null;
+    if (P.seat && firstPerson) {
+      // 坐機動遊戲第一身：鏡頭跟住座位一齊翻轉
+      me.visible = false;
+      camera.position.copy(seatP).addScaledVector(tmpUp.set(0, 1, 0).applyQuaternion(seatQ), 1.25 * P.scale);
+      camera.quaternion.copy(seatQ).multiply(tmpQ2.setFromEuler(tmpE.set(-camPitch, Math.PI + camYaw, 0, 'YXZ')));
+    } else if (firstPerson) {
       // 第一身：鏡頭喺眼睛位置，可以自由向上望天、向下望地
       me.visible = false;
       camera.position.set(P.pos.x, P.pos.y + 1.6 * P.scale, P.pos.z);
@@ -624,6 +781,7 @@ function startGame(myName) {
       ray.set(target, dir); ray.far = dist;
       const hit = ray.intersectObjects(camBlockers, false)[0];
       if (hit) dist = Math.max(0.6, hit.distance - 0.25);
+      if (!P.seat) dist = Math.min(dist, camRayCols(target, dir, dist));
       camera.position.copy(target).addScaledVector(dir, dist);
       // 鏡頭唔可以穿落地底；向上望時鏡頭貼地，視線向天空抬高
       if (camera.position.y < P.pos.y + 0.25) camera.position.y = P.pos.y + 0.25;
@@ -631,8 +789,8 @@ function startGame(myName) {
       look = target.clone();
       if (camPitch < 0) look.y += -camPitch * dist * 1.4;
     }
-    if (shake > 0) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 0.8); }
-    camera.lookAt(look);
+    if (shake > 0 && look) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 0.8); }
+    if (look) camera.lookAt(look);
 
     // 渲染
     renderer.setScissorTest(false);

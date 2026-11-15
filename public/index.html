@@ -79,6 +79,16 @@
   .modal { position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
   .modal .box { background:#1a2236; border:1px solid var(--gold); border-radius:16px; padding:16px; min-width:280px; text-align:center; }
   .modal h3 { margin:0 0 10px; color:var(--gold); }
+  #hotelPanel { position:absolute; right:calc(14px + env(safe-area-inset-right)); top:64px; width:230px; background:linear-gradient(#e9cf8a,#b08a3a); color:#2a1a00; border-radius:14px; padding:8px; box-shadow:0 4px 18px rgba(0,0,0,.5); }
+  #hpTitle { font-size:12px; font-weight:bold; }
+  #hpDisp { background:#100; color:#ff4b2b; font:bold 22px monospace; text-align:center; border-radius:6px; margin:4px 0; }
+  #hpKeys { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; }
+  #hpKeys button { height:30px; border-radius:15px; background:radial-gradient(#fff,#e8d9a8); font-weight:bold; font-size:14px; color:#2a1a00; box-shadow:0 1px 2px #555; }
+  #hpKeys .wide { font-size:12px; background:radial-gradient(#9f9,#2a2); color:#fff; }
+  @media (max-height:500px) { #hotelPanel { top:58px; width:210px; padding:6px; } #hpKeys button { height:24px; font-size:12px; } #hpDisp { font-size:17px; } }
+  #musicBox { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:64px; background:var(--bg); padding:8px; border-radius:12px; display:flex; flex-direction:column; gap:6px; z-index:12; }
+  #musicBox button { padding:8px 14px; border-radius:10px; background:#2d3a5a; font-size:14px; text-align:left; }
+  #musicBox button.on { background:#1b8a3a; }
   .keyBtn { display:block; width:100%; margin:6px 0; padding:12px; border-radius:10px; background:#2d3a5a; font-size:16px; }
   .keyBtn:active { background:#45568a; }
   .cancel { margin-top:6px; padding:8px 18px; border-radius:10px; background:#444; }
@@ -91,7 +101,7 @@
   #phoneUI .clock { font-size:44px; text-align:center; font-weight:200; }
   #phoneUI ul { padding-left:18px; font-size:14px; max-height:180px; overflow:auto; }
 
-  #toast { position:fixed; left:50%; top:16%; transform:translateX(-50%); background:rgba(0,0,0,.8); padding:10px 18px; border-radius:20px; font-size:16px; z-index:30; pointer-events:none; transition:opacity .3s; opacity:0; text-align:center; }
+  #toast { white-space:pre-line; position:fixed; left:50%; top:16%; transform:translateX(-50%); background:rgba(0,0,0,.8); padding:10px 18px; border-radius:20px; font-size:16px; z-index:30; pointer-events:none; transition:opacity .3s; opacity:0; text-align:center; }
   #flash { position:fixed; inset:0; z-index:20; pointer-events:none; background:radial-gradient(#fff6c0,#ff7a00 40%,rgba(255,0,0,.4)); opacity:0; }
   /* 商店 / 銀行 / 背包 */
   .shopBox { width:min(860px,96vw); max-height:92vh; display:flex; flex-direction:column; padding:0 !important; overflow:hidden; text-align:left !important; }
@@ -190,6 +200,7 @@
   <div id="topR">
     <button class="tb" id="btnFP" title="第一身 (V)">👁<small>第一身</small></button>
     <button class="tb" id="btnBag" title="背包">🎒<small>背包</small></button>
+    <button class="tb" id="btnMusic" title="背景音樂">🎵<small>音樂</small></button>
     <button class="tb" id="btnVoice" title="語音">🎤<small>語音</small></button>
     <button class="tb" id="btnCctv" title="CCTV">📹<small>CCTV</small></button>
     <button class="tb" id="btnSize" title="角色大小">🔍<small>大小</small></button>
@@ -199,6 +210,7 @@
     角色大小 <input type="range" id="sizeRange" min="0.5" max="3" step="0.1" value="1"><br>
     鏡頭距離 <input type="range" id="zoomRange" min="2" max="40" step="0.5" value="6">
   </div>
+  <div id="musicBox" class="hidden"></div>
   <div id="joy"><div id="knob"></div>
     <span class="ar" style="left:62px;top:4px">▲</span><span class="ar" style="left:62px;bottom:4px">▼</span>
     <span class="ar" style="left:6px;top:58px">◀</span><span class="ar" style="right:6px;top:58px">▶</span>
@@ -213,6 +225,11 @@
     <div id="lpDisp">1</div>
     <div id="lpInput"></div>
     <div id="lpKeys"></div>
+  </div>
+  <div id="hotelPanel" class="hidden">
+    <div id="hpTitle">柏熙酒店 Lift</div>
+    <div id="hpDisp">1</div>
+    <div id="hpKeys"></div>
   </div>
   <div id="cctvFrame" class="hidden"><span>● REC</span><i id="cctvLbl">CAM</i></div>
 </div>
@@ -230,6 +247,17 @@
       <button id="checkout">💳 埋單 / 結帳</button>
     </div>
   </div>
+</div></div>
+
+<!-- 酒店 Check-in -->
+<div id="hotelModal" class="modal hidden"><div class="box" style="max-width:420px">
+  <h3>🛎 柏熙酒店 Check-in</h3>
+  <div id="hmCash" style="font-size:13px;opacity:.85"></div>
+  <button class="keyBtn" data-room="single">🛏 豪華單人房（單人床）— HK$1,880 / 晚</button>
+  <button class="keyBtn" data-room="double">🛏 豪華雙人房（雙人床）— HK$2,680 / 晚</button>
+  <button class="keyBtn" data-room="suite">👑 總統套房（20 樓成層）— HK$68,000 / 晚</button>
+  <div id="hmMsg" style="min-height:20px;color:#9f9;font-size:14px"></div>
+  <button class="cancel" id="hmClose">關閉</button>
 </div></div>
 
 <!-- 銀行 -->

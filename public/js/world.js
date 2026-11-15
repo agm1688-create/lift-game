@@ -237,38 +237,7 @@ export function buildWorld(scene, api) {
   cross.position.set(vet.x0 + 0.02, 2.2, -12); cross.rotation.y = Math.PI / 2; scene.add(cross);
   inter([-22.5, 0, -12.4], 1.8, () => '🩺 幫柴犬睇醫生', () => api.vet());
 
-  // ---------- 金色宮殿酒店（參考澳門路氹某金色酒店外型） ----------
-  const hotel = new THREE.Group(); hotel.position.set(55, 0, -125); scene.add(hotel);
-  const facade = (rx, ry) => std('#fff', { map: T.hotelFacadeTex(rx, ry), roughness: 0.45, metalness: 0.35 });
-  const crownMat = goldMat;
-  // 中央主樓（前面微弧）
-  const mainH = 115;
-  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, mainH, 48, 1, true, -0.38, 0.76), facade(14, 20));
-  cyl.position.set(0, mainH / 2, -48); cyl.material.side = THREE.DoubleSide; hotel.add(cyl);
-  const backBlock = new THREE.Mesh(new THREE.BoxGeometry(50, mainH, 22), facade(10, 20)); backBlock.position.set(0, mainH / 2, 9); hotel.add(backBlock);
-  // 兩翼（向後斜）
-  [-1, 1].forEach(s => {
-    const wing = new THREE.Group(); wing.position.set(s * 38, 0, 6); wing.rotation.y = -s * 0.42; hotel.add(wing);
-    const wh = 100;
-    const wb = new THREE.Mesh(new THREE.BoxGeometry(46, wh, 20), facade(9, 18)); wb.position.set(s * 18, wh / 2, 0); wing.add(wb);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(47, 3, 21), crownMat); band.position.set(s * 18, wh + 1.5, 0); wing.add(band);
-    for (let i = 0; i < 6; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(1.2, wh, 0.8), crownMat); f.position.set(s * 18 - 20 + i * 8, wh / 2, 10.2); wing.add(f); }
-  });
-  // 頂冠
-  const crownRing = new THREE.Mesh(new THREE.CylinderGeometry(70.5, 70.5, 5, 48, 1, true, -0.38, 0.76), crownMat); crownRing.material = crownMat; crownRing.position.set(0, mainH + 2.5, -48); hotel.add(crownRing);
-  const top = new THREE.Mesh(new THREE.BoxGeometry(52, 4, 24), crownMat); top.position.set(0, mainH + 2, 9); hotel.add(top);
-  for (let i = -4; i <= 4; i++) {
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(1.4, mainH, 1.4), crownMat);
-    const a = i * 0.08; fin.position.set(Math.sin(a) * 70.6, mainH / 2, -48 + Math.cos(a) * 70.6); hotel.add(fin);
-    const flower = new THREE.Mesh(new THREE.OctahedronGeometry(2.4), crownMat); flower.position.set(fin.position.x, mainH + 7, fin.position.z); hotel.add(flower);
-  }
-  // 裙樓
-  const podium = new THREE.Mesh(new THREE.BoxGeometry(170, 16, 50), facade(30, 3)); podium.position.set(0, 8, 0); hotel.add(podium);
-  const podBand = new THREE.Mesh(new THREE.BoxGeometry(172, 1.5, 52), crownMat); podBand.position.set(0, 16.5, 0); hotel.add(podBand);
-  const hName = new THREE.Mesh(new THREE.PlaneGeometry(40, 6), new THREE.MeshBasicMaterial({ map: T.signTex('金 宮 酒 店   GOLDEN PALACE', '#5a1a0e', '#ffd77a', 1024, 160, 'bold 80px serif') }));
-  hName.position.set(0, 12, 25.2); hotel.add(hName);
-  hotel.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
-  addCol(55 - 85, 0, -150, 55 + 85, 16, -100);
+  // ---------- 柏熙酒店：見 hotel.js（20 層，可以行樓梯 / 搭 Lift）----------
   // 表演湖 + 噴水池
   const lake = { cx: 55, cz: -72, w: 120, d: 44 };
   const water = new THREE.Mesh(new THREE.PlaneGeometry(lake.w, lake.d), std('#1a6fa0', { metalness: 0.6, roughness: 0.1, transparent: true, opacity: 0.9 }));
@@ -318,6 +287,7 @@ export function buildWorld(scene, api) {
   [[15, 10], [-15, 14], [18, -20], [-12, -28], [25, 5], [-34, -24]].forEach(s => treeSpots.push(s));
   treeSpots.forEach(([x, z]) => {
     if (x > -30 && x < 140 && z < -40 && z > -160) return;
+    if (x < -72 && z > -130 && z < 74) return;   // 遊樂場
     mesh(new THREE.CylinderGeometry(0.25, 0.35, 3, 8), treeTrunk, x, 1.5, z);
     mesh(new THREE.SphereGeometry(2, 10, 8), treeLeaf, x, 4.2, z);
     addCol(x - 0.35, 0, z - 0.35, x + 0.35, 3, z + 0.35);
