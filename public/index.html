@@ -35,6 +35,10 @@
   #rotate .ph { font-size:64px; animation:rot 1.6s infinite; }
   @keyframes rot { 0%,30% { transform:rotate(0) } 60%,100% { transform:rotate(-90deg) } }
   @media (orientation:portrait) and (pointer:coarse) { #rotate { display:flex; } }
+  body.portraitOk #rotate { display:none !important; }
+  #rotBtn { padding:16px 28px; border-radius:30px; background:linear-gradient(#ffd864,#e8a800); color:#2a1a00; font-size:20px; font-weight:bold; box-shadow:0 4px 14px rgba(255,200,61,.4); }
+  #rotMsg { font-size:14px; opacity:.8; max-width:300px; line-height:1.5; }
+  #rotSkip { background:none; color:#aaa; font-size:14px; text-decoration:underline; padding:8px; }
 
   /* HUD */
   #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
@@ -98,7 +102,26 @@
 <body>
 <canvas id="c"></canvas>
 
-<div id="rotate"><div class="ph">📱</div><div>請將手機<b>打橫</b>玩</div></div>
+<div id="rotate">
+  <div class="ph">📱</div><div>請將手機<b>打橫</b>玩</div>
+  <button id="rotBtn">🔄 撳一下打橫</button>
+  <div id="rotMsg"></div>
+  <button id="rotSkip">直向照玩</button>
+</div>
+<script>
+  // 撳掣：全螢幕 + 鎖定橫向（Android Chrome 支援；iPhone Safari 唔支援鎖定）
+  document.getElementById('rotBtn').onclick = async () => {
+    const msg = document.getElementById('rotMsg');
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      await screen.orientation.lock('landscape');
+      msg.textContent = '';
+    } catch (e) {
+      msg.innerHTML = '呢部手機唔俾網頁自動轉屏 😅<br>請開「自動旋轉」再將手機打橫，或者撳下面「直向照玩」';
+    }
+  };
+  document.getElementById('rotSkip').onclick = () => document.body.classList.add('portraitOk');
+</script>
 
 <div id="start">
   <div class="card">
