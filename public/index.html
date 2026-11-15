@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>搭 Lift 遊戲</title>
+<style>
+  :root { --gold:#ffc83d; --bg:rgba(10,14,24,.72); --fg:#fff; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#000; color:var(--fg); font-family:-apple-system,"PingFang HK","Microsoft JhengHei",sans-serif; touch-action:none; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  button { font:inherit; color:inherit; border:0; cursor:pointer; }
+  .hidden { display:none !important; }
+
+  /* 開始畫面 */
+  #start { position:fixed; inset:0; z-index:50; background:linear-gradient(135deg,#0d1b3a,#3a1d0d); display:flex; align-items:center; justify-content:center; padding:12px; overflow:auto; }
+  #start .card { display:flex; gap:18px; background:rgba(0,0,0,.4); border:1px solid rgba(255,200,61,.4); border-radius:18px; padding:16px; max-width:900px; width:100%; }
+  #preview { width:260px; min-width:200px; aspect-ratio:3/4; border-radius:12px; background:radial-gradient(#3b5a8c,#14213d); }
+  #start .form { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  #start h1 { margin:0; font-size:28px; color:var(--gold); letter-spacing:2px; }
+  #start label { font-size:13px; opacity:.8; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; }
+  .opt { padding:6px 12px; border-radius:20px; background:rgba(255,255,255,.12); font-size:14px; }
+  .opt.on { background:var(--gold); color:#2a1a00; font-weight:bold; }
+  .sw { width:32px; height:32px; border-radius:50%; border:3px solid transparent; }
+  .sw.on { border-color:var(--gold); transform:scale(1.1); }
+  #name { padding:8px 12px; border-radius:10px; border:1px solid #666; background:#111; color:#fff; font-size:16px; user-select:text; -webkit-user-select:text; }
+  #go { margin-top:6px; padding:12px; border-radius:12px; background:linear-gradient(#ffd864,#e8a800); color:#2a1a00; font-size:20px; font-weight:bold; }
+  #start .tip { font-size:12px; opacity:.65; }
+  @media (max-height:500px) { #start .card { padding:10px; gap:10px; } #preview { width:170px; min-width:150px; } #start h1 { font-size:20px; } .sw { width:26px; height:26px; } .opt { padding:4px 9px; font-size:12px; } #go { padding:8px; font-size:16px; } #start .form { gap:5px; } }
+
+  #rotate { position:fixed; inset:0; z-index:100; background:#000; display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px; font-size:20px; text-align:center; padding:20px; }
+  #rotate .ph { font-size:64px; animation:rot 1.6s infinite; }
+  @keyframes rot { 0%,30% { transform:rotate(0) } 60%,100% { transform:rotate(-90deg) } }
+  @media (orientation:portrait) and (pointer:coarse) { #rotate { display:flex; } }
+
+  /* HUD */
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  #hud > * { pointer-events:auto; }
+  #info { position:absolute; left:calc(10px + env(safe-area-inset-left)); top:10px; background:var(--bg); padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.5; min-width:170px; pointer-events:none; }
+  #info b { color:var(--gold); }
+  #floorBig { font-size:22px; font-weight:bold; color:#ff6b4a; font-family:monospace; }
+  #topR { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:10px; display:flex; gap:8px; }
+  .tb { width:46px; height:46px; border-radius:12px; background:var(--bg); font-size:22px; display:flex; align-items:center; justify-content:center; position:relative; }
+  .tb.on { background:#1b8a3a; box-shadow:0 0 0 2px #6f6; }
+  .tb small { position:absolute; bottom:1px; font-size:9px; opacity:.85; }
+  #sizeBox { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:64px; background:var(--bg); padding:10px; border-radius:12px; font-size:13px; }
+  #joy { position:absolute; left:calc(24px + env(safe-area-inset-left)); bottom:24px; width:140px; height:140px; border-radius:50%; background:rgba(0,0,0,.28); border:2px solid rgba(255,255,255,.6); touch-action:none; }
+  #knob { position:absolute; left:50%; top:50%; width:60px; height:60px; margin:-30px; border-radius:50%; background:rgba(255,255,255,.75); box-shadow:0 2px 6px rgba(0,0,0,.4); }
+  #joy .ar { position:absolute; font-size:16px; opacity:.9; text-shadow:0 0 3px #000; }
+  #rbtn { position:absolute; right:calc(24px + env(safe-area-inset-right)); bottom:24px; display:flex; gap:12px; align-items:flex-end; }
+  .big { width:76px; height:76px; border-radius:50%; background:rgba(0,0,0,.35); border:2px solid rgba(255,255,255,.7); font-size:15px; font-weight:bold; }
+  #act { width:auto; min-width:76px; max-width:220px; padding:0 14px; border-radius:38px; background:rgba(255,200,61,.85); color:#2a1a00; font-size:14px; }
+  #inv { position:absolute; left:50%; transform:translateX(-50%); bottom:12px; display:flex; gap:6px; }
+  .slot { width:54px; height:54px; border-radius:10px; background:var(--bg); font-size:24px; display:flex; flex-direction:column; align-items:center; justify-content:center; border:2px solid transparent; }
+  .slot small { font-size:9px; }
+  .slot.on { border-color:var(--gold); }
+
+  /* 電梯面板 */
+  #liftPanel { position:absolute; right:calc(14px + env(safe-area-inset-right)); top:64px; width:230px; background:linear-gradient(#b9bec4,#8e949b); color:#111; border-radius:14px; padding:8px; box-shadow:0 4px 18px rgba(0,0,0,.5); }
+  #lpTitle { font-size:12px; font-weight:bold; text-align:center; }
+  #lpDisp { background:#100; color:#ff4b2b; font-family:monospace; font-size:24px; text-align:center; border-radius:6px; padding:2px; margin:4px 0; }
+  #lpInput { background:#021; color:#4f4; font-family:monospace; font-size:18px; text-align:right; border-radius:6px; padding:3px 8px; min-height:30px; }
+  #lpKeys { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:5px; }
+  #lpKeys button { height:30px; border-radius:15px; background:radial-gradient(#fff,#cfd3d7); font-weight:bold; font-size:14px; box-shadow:0 1px 2px #555; }
+  #lpKeys .go { background:radial-gradient(#9f9,#2a2); }
+  #lpKeys .wide { grid-column:span 2; font-size:12px; }
+  #lpKeys .red { background:radial-gradient(#f66,#b00); color:#fff; }
+  #lpKeys .em { background:radial-gradient(#6e6,#080); color:#fff; font-size:11px; }
+  @media (max-height:500px) { #liftPanel { top:58px; width:210px; padding:6px; } #lpKeys button { height:25px; font-size:12px; } #lpDisp { font-size:18px; margin:2px 0; } #lpInput { font-size:15px; min-height:24px; } }
+
+  /* key 對話框 */
+  .modal { position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
+  .modal .box { background:#1a2236; border:1px solid var(--gold); border-radius:16px; padding:16px; min-width:280px; text-align:center; }
+  .modal h3 { margin:0 0 10px; color:var(--gold); }
+  .keyBtn { display:block; width:100%; margin:6px 0; padding:12px; border-radius:10px; background:#2d3a5a; font-size:16px; }
+  .keyBtn:active { background:#45568a; }
+  .cancel { margin-top:6px; padding:8px 18px; border-radius:10px; background:#444; }
+
+  #cctvFrame { position:absolute; pointer-events:none; border:3px solid #333; border-radius:6px; box-shadow:0 0 0 2px #0f0 inset; }
+  #cctvFrame span { position:absolute; left:6px; top:4px; color:#f33; font:bold 12px monospace; text-shadow:0 0 3px #000; }
+  #cctvFrame i { position:absolute; right:6px; bottom:4px; color:#0f0; font:11px monospace; font-style:normal; text-shadow:0 0 3px #000; }
+
+  #phoneUI .box { width:250px; min-height:400px; border-radius:30px; border:8px solid #111; background:linear-gradient(#1e3c72,#2a5298); padding:20px 14px; text-align:left; }
+  #phoneUI .clock { font-size:44px; text-align:center; font-weight:200; }
+  #phoneUI ul { padding-left:18px; font-size:14px; max-height:180px; overflow:auto; }
+
+  #toast { position:fixed; left:50%; top:16%; transform:translateX(-50%); background:rgba(0,0,0,.8); padding:10px 18px; border-radius:20px; font-size:16px; z-index:30; pointer-events:none; transition:opacity .3s; opacity:0; text-align:center; }
+  #flash { position:fixed; inset:0; z-index:20; pointer-events:none; background:radial-gradient(#fff6c0,#ff7a00 40%,rgba(255,0,0,.4)); opacity:0; }
+  #wifi { position:absolute; left:calc(10px + env(safe-area-inset-left)); top:120px; background:var(--bg); padding:4px 10px; border-radius:10px; font-size:13px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="rotate"><div class="ph">📱</div><div>請將手機<b>打橫</b>玩</div></div>
+
+<div id="start">
+  <div class="card">
+    <canvas id="preview"></canvas>
+    <div class="form">
+      <h1>🛗 搭 Lift 遊戲</h1>
+      <label>名字</label>
+      <input id="name" maxlength="16" placeholder="輸入你嘅名">
+      <label>性別</label>
+      <div class="row" id="optGender"></div>
+      <label>膚色</label>
+      <div class="row" id="optSkin"></div>
+      <label>帽</label>
+      <div class="row" id="optHat"></div>
+      <label>衫色</label>
+      <div class="row" id="optShirt"></div>
+      <button id="go">開始玩 ▶</button>
+      <div class="tip">唔使註冊、唔使密碼。手機請打橫玩。電腦：WASD／方向鍵行，滑鼠拖動轉鏡頭，滾輪縮放，E 互動，空白鍵跳。</div>
+    </div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="info">
+    <div id="floorBig">1F</div>
+    <div>高度 <b id="altTxt">0 m</b></div>
+    <div id="layerTxt">大廈樓層</div>
+    <div>🥇 金條 <b id="goldTxt">0</b>　👥 在線 <b id="onlineTxt">1</b></div>
+  </div>
+  <div id="wifi" class="hidden">📶 Wi-Fi 已連接</div>
+  <div id="topR">
+    <button class="tb" id="btnVoice" title="語音">🎤<small>語音</small></button>
+    <button class="tb" id="btnCctv" title="CCTV">📹<small>CCTV</small></button>
+    <button class="tb" id="btnSize" title="角色大小">🔍<small>大小</small></button>
+    <button class="tb" id="btnFull" title="全螢幕">⛶<small>全屏</small></button>
+  </div>
+  <div id="sizeBox" class="hidden">
+    角色大小 <input type="range" id="sizeRange" min="0.5" max="3" step="0.1" value="1"><br>
+    鏡頭距離 <input type="range" id="zoomRange" min="2" max="40" step="0.5" value="6">
+  </div>
+  <div id="joy"><div id="knob"></div>
+    <span class="ar" style="left:62px;top:4px">▲</span><span class="ar" style="left:62px;bottom:4px">▼</span>
+    <span class="ar" style="left:6px;top:58px">◀</span><span class="ar" style="right:6px;top:58px">▶</span>
+  </div>
+  <div id="rbtn">
+    <button class="big hidden" id="act">互動</button>
+    <button class="big" id="jump">跳</button>
+  </div>
+  <div id="inv"></div>
+  <div id="liftPanel" class="hidden">
+    <div id="lpTitle">1號 客 Lift</div>
+    <div id="lpDisp">1</div>
+    <div id="lpInput"></div>
+    <div id="lpKeys"></div>
+  </div>
+  <div id="cctvFrame" class="hidden"><span>● REC</span><i id="cctvLbl">CAM</i></div>
+</div>
+
+<div id="keyModal" class="modal hidden"><div class="box">
+  <h3 id="keyTitle">🔑 請揀 Key</h3>
+  <button class="keyBtn" data-k="0">🗝️ Lift 1 Key（客 Lift）</button>
+  <button class="keyBtn" data-k="1">🗝️ Lift 2 Key（貨 Lift）</button>
+  <button class="cancel" id="keyCancel">取消</button>
+</div></div>
+
+<div id="phoneUI" class="modal hidden"><div class="box">
+  <div class="clock" id="phClock">12:00</div>
+  <div style="text-align:center;opacity:.8" id="phAlt"></div>
+  <p>👥 在線玩家：</p><ul id="phList"></ul>
+  <button class="cancel" id="phClose" style="width:100%">關閉</button>
+</div></div>
+
+<div id="toast"></div>
+<div id="flash"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
