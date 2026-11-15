@@ -326,8 +326,9 @@ export function buildHotel(scene, api) {
   // 天台嘅樓梯門要可以行出去：門楣頂唔使碰撞（喺 3m 以上）
   // 大招牌（由廣場都見到）
   const bigSign = new THREE.Mesh(new THREE.PlaneGeometry(34, 6.5), signMat('柏 熙 酒 店', '#5a1a0e', '#ffd77a', 1024, 196, 'bold 150px serif'));
-  bigSign.position.set(0, NF * FH + 11, 16.4); root.add(bigSign);
+  bigSign.position.set(0, NF * FH + 10, 20.3); root.add(bigSign);
   const bigSign2 = bigSign.clone(); bigSign2.rotation.y = Math.PI; bigSign2.position.z = -16.4; root.add(bigSign2);
+  palaceShell(root, colliders);
 
   // ===== 1 樓：大堂 =====
   const L = new Batch();
@@ -573,3 +574,48 @@ export function roomDoor(no) {
   return new THREE.Vector3(HX + r[0] + 1.8, hotelFloorY(f), HZ + r[2] * 1.2);
 }
 export const ROOM_TYPES = ROOMS.map(r => r[3]);
+
+// ---------- 外型：參考澳門路氹嗰座金色宮殿式酒店 ----------
+// 中間主樓前面加一幅向外微彎嘅金色玻璃幕牆（一直升到天台上面變成金冠），兩邊各有一翼向後斜，頂部有金色花飾
+function palaceShell(root, colliders) {
+  const R = 140, front = 19.8, half = Math.asin(33 / R), y0 = 4.8, y1 = NF * FH + 18;
+  const skinTex = TX.canvasTex(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(214,170,80,0.28)'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#e8c068'; g.fillRect(0, 0, w, 10); g.fillRect(0, h / 2 - 3, w, 6); g.fillRect(0, 0, 8, h); g.fillRect(w / 2 - 2, 0, 4, h);
+    g.fillStyle = 'rgba(255,230,160,0.5)'; g.fillRect(0, 10, w, 3);
+  }, 18, (y1 - y0) / FH);
+  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, transparent: true, metalness: 0.7, roughness: 0.25, emissive: '#3a2600', emissiveIntensity: 0.3, side: THREE.DoubleSide, depthWrite: false });
+  const skin = new THREE.Mesh(new THREE.CylinderGeometry(R, R, y1 - y0, 40, 1, true, -half, half * 2), skinMat);
+  skin.position.set(0, (y0 + y1) / 2, front - R); skin.renderOrder = 3; root.add(skin);
+  // 頂冠 + 金花
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.3, R + 0.3, 3, 40, 1, true, -half, half * 2), goldMat); crown.position.set(0, y1 - 1.5, front - R); root.add(crown);
+  const flowerGeo = new THREE.OctahedronGeometry(1.6);
+  for (let i = -7; i <= 7; i++) {
+    const a = i / 7 * half * 0.97, x = Math.sin(a) * R, z = front - R + Math.cos(a) * R;
+    const f = new THREE.Mesh(flowerGeo, goldMat); f.position.set(x, y1 + 1.8 + (7 - Math.abs(i)) * 0.35, z); f.scale.set(1, 1.5, 1); root.add(f);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.5, y1 - y0, 0.5), goldMat); fin.position.set(x, (y0 + y1) / 2, z + 0.3); root.add(fin);
+  }
+  // 兩翼（向後斜，金色窗格外牆）
+  const wingTex = (rx, ry) => std('#fff', { map: TX.hotelFacadeTex(rx, ry), roughness: 0.45, metalness: 0.35 });
+  const WL = 46, WD = 20, WH = 70;
+  [-1, 1].forEach(s => {
+    const g = new THREE.Group(); g.position.set(s * 36.5, 0, 5); g.rotation.y = s * 0.42; root.add(g);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(WL, WH, WD), wingTex(9, 16)); b.position.set(s * WL / 2, WH / 2, 0); g.add(b);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(WL + 1, 2.5, WD + 1), goldMat); band.position.set(s * WL / 2, WH + 1.25, 0); g.add(band);
+    for (let i = 0; i <= 6; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(1.0, WH, 0.8), goldMat); fin.position.set(s * (1 + i * 7.3), WH / 2, WD / 2 + 0.4); g.add(fin);
+      const fl = new THREE.Mesh(flowerGeo, goldMat); fl.position.set(s * (1 + i * 7.3), WH + 4, WD / 2); fl.scale.set(0.8, 1.2, 0.8); g.add(fl);
+    }
+    // 碰撞：沿住翼分 4 段，每段用外接方盒
+    const cs = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+    for (let j = 0; j < 4; j++) {
+      const xs = [s * j * WL / 4, s * (j + 1) * WL / 4], pts = [];
+      xs.forEach(lx => [-WD / 2, WD / 2].forEach(lz => pts.push([g.position.x + lx * cs + lz * sn, g.position.z - lx * sn + lz * cs])));
+      const X = pts.map(p => p[0]), Z = pts.map(p => p[1]);
+      colliders.push({ min: [Math.min(...X) + HX + (j ? 1.5 : 0) * s * 0, 0, Math.min(...Z) + HZ], max: [Math.max(...X) + HX, WH, Math.max(...Z) + HZ] });
+    }
+    // 主樓同翼之間嘅連接
+    const fill = new THREE.Mesh(new THREE.BoxGeometry(9, WH, 26), wingTex(2, 16)); fill.position.set(s * 36.6, WH / 2, 1.5); root.add(fill);
+    colliders.push({ min: [HX + Math.min(s * 32.1, s * 41.1), 0, HZ - 11.5], max: [HX + Math.max(s * 32.1, s * 41.1), WH, HZ + 14.5] });
+  });
+}

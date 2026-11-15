@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import * as T from './textures.js';
 import { goldMat, itemMesh, buildShiba } from './avatar.js';
 import { altOfFloor, ISS_FLOOR, MACHINE_ROOM_Y } from './alt.js';
+import { nearRoute } from './vehicles.js';
 
 export const LIFT_DEF = [
   { id: 0, name: '1號 客 Lift', x: -2.6, z: -12, w: 2.4, d: 2.4, h: 2.8, cargo: false },
@@ -288,6 +289,7 @@ export function buildWorld(scene, api) {
   treeSpots.forEach(([x, z]) => {
     if (x > -30 && x < 140 && z < -40 && z > -160) return;
     if (x < -72 && z > -130 && z < 74) return;   // 遊樂場
+    if (nearRoute(x, z, 6)) return;               // 露營車路線
     mesh(new THREE.CylinderGeometry(0.25, 0.35, 3, 8), treeTrunk, x, 1.5, z);
     mesh(new THREE.SphereGeometry(2, 10, 8), treeLeaf, x, 4.2, z);
     addCol(x - 0.35, 0, z - 0.35, x + 0.35, 3, z + 0.35);

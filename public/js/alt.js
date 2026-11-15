@@ -16,7 +16,7 @@ export function altOfFloor(f) {
 }
 
 export function layerName(a) {
-  if (a < 0) return '地底・電梯機房';
+  if (a < -1) return '地底・電梯機房';
   if (a < 350) return '大廈樓層';
   if (a < 12000) return '對流層・雲同飛機';
   if (a < 50000) return '平流層';
@@ -27,7 +27,7 @@ export function layerName(a) {
 }
 
 export function fmtAlt(a) {
-  if (Math.abs(a) < 1000) return `${a.toFixed(0)} m`;
+  if (Math.abs(a) < 1000) return `${Math.abs(a) < 0.5 ? '0' : a.toFixed(0)} m`;
   return `${(a / 1000).toFixed(a < 100000 ? 1 : 0)} km`;
 }
 
