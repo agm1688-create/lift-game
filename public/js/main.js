@@ -7,6 +7,11 @@ import { buildAvatar, animateAvatar, buildShiba, animateShiba, itemMesh, SKINS, 
 import { Net, Voice } from './net.js';
 import { initAudio, sfx } from './audio.js';
 import { altOfFloor, layerName, fmtAlt, floorLabel, MAX_FLOOR } from './alt.js';
+import { buildShops } from './shops.js';
+
+// 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
+let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
+try { CATALOG = await import('./catalog.js'); } catch (e) { console.warn('catalog.js 載入失敗', e); }
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches;
@@ -69,7 +74,7 @@ function startGame(myName) {
   // ---------- 玩家狀態 ----------
   const SPAWN = new V3(0, 0, 8);
   const P = { pos: SPAWN.clone(), vy: 0, face: Math.PI, grounded: true, ride: -1, scale: 1, held: null, inv: new Set(), gold: 0, dog: false, fallFrom: 0, spraying: false, anim: 0, wifi: false };
-  let camYaw = 0, camPitch = 0.32, camDist = 6;
+  let camYaw = 0, camPitch = 0.32, camDist = 6, firstPerson = false;
   const toast = (msg, ms = 2200) => { const t = $('toast'); t.textContent = msg; t.style.opacity = 1; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.opacity = 0, ms); };
 
   // ---------- 網絡 ----------
@@ -83,7 +88,7 @@ function startGame(myName) {
     teleport: (x, y, z) => { P.pos.set(x, y, z); P.vy = 0; P.fallFrom = y; },
     alarm: () => { net.send({ t: 'ev', kind: 'alarm' }); doAlarm(); },
     pickup: (kind, obj) => { obj.visible = false; P.inv.add(kind); setHeld(kind); sfx.pickup(); renderInv(); toast({ ext: '🧯 拎咗滅火筒（撳互動掣噴）', phone: '📱 拎咗手機', router: '📶 拎咗 Router' }[kind]); },
-    gold: () => { P.gold++; sfx.pickup(); $('goldTxt').textContent = P.gold; toast(`🥇 金條 +1（共 ${P.gold} 條）`); },
+    gold: () => { P.gold++; saveEcon(); sfx.pickup(); toast(`🥇 金條 +1（共 ${P.gold} 條）— 可以拎去銀行存或者賣`); },
     toiletLight: () => toiletLight,
     setToiletLight: on => { setToiletLight(on); net.send({ t: 'world', toiletLight: on }); sfx.click(); },
     hasDog: () => P.dog,
@@ -94,13 +99,128 @@ function startGame(myName) {
     now: () => net.now(), playerY: () => P.pos.y,
     arrived: id => { const L = lifts.lifts[id]; if (Math.abs(P.pos.y - L.y) < 40) sfx.ding(); },
   };
+  api.openShop = (key, name, colors) => openShop(key, name, colors);
+  api.openBank = name => openBank(name);
   const world = buildWorld(scene, api);
   const lifts = buildLifts(scene, api);
-  const staticCols = world.colliders.concat(lifts.staticCols);
-  const interactables = world.interactables.concat(lifts.interactables);
+  const shops = buildShops(scene, api, CATALOG.SHOPS);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables);
   const camBlockers = [];
   scene.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && !o.material.transparent && o.position.y < 20 && o.position.y > -10) { o.geometry.computeBoundingBox(); const s = o.geometry.boundingBox.getSize(new V3()); if (Math.max(s.x, s.y, s.z) > 1.5 && Math.min(s.x, s.y, s.z) < 0.5 && o.parent === scene) camBlockers.push(o); } });
   function setToiletLight(on) { toiletLight = on; world.setToiletLight(on); }
+
+  // ================= 錢包 / 銀行 / 背包（存喺呢部機嘅瀏覽器）=================
+  const E = Object.assign({ cash: 100, save: 0, vault: 0, gold: 0, bag: {} }, store.get('econ', {}));
+  P.gold = E.gold;
+  const money = n => 'HK$' + (Math.round(n * 10) / 10).toLocaleString('en-HK');
+  function saveEcon() {
+    E.gold = P.gold; store.set('econ', E);
+    $('goldTxt').textContent = P.gold; $('cashTxt').textContent = money(E.cash);
+  }
+  saveEcon();
+  const GOLD = CATALOG.GOLD || {};
+  const goldBuy = GOLD.tael_buy || GOLD.gram_buy * 37.429 || 30000;   // 銀行收購價（每両）
+  const goldSell = GOLD.tael_sell || goldBuy * 1.05;
+  const closeModal = id => $(id).classList.add('hidden');
+
+  // ---------- 商店 / 餐廳 ----------
+  let shopKey = null, shopCat = '全部';
+  const cart = new Map();
+  function openShop(key, name, colors) {
+    const data = CATALOG.SHOPS[key] || {};
+    shopKey = key; shopCat = '全部'; cart.clear();
+    const box = $('shopModal').querySelector('.box');
+    box.style.setProperty('--shopC', colors[0]); box.style.setProperty('--shopT', colors[1] === '#ffffff' ? '#fff' : colors[1]);
+    $('shopName').textContent = `${data.name || name}${data.en ? ' ' + data.en : ''}`;
+    if (!(data.items || []).length) { toast('呢間舖暫時未有貨品資料'); return; }
+    renderShop(); $('shopModal').classList.remove('hidden'); sfx.click();
+  }
+  function renderShop() {
+    const items = CATALOG.SHOPS[shopKey].items;
+    const cats = ['全部', ...new Set(items.map(i => i.cat || '其他'))];
+    $('shopTabs').innerHTML = '';
+    cats.forEach(c => { const b = document.createElement('button'); b.textContent = c; if (c === shopCat) b.className = 'on'; b.onclick = () => { shopCat = c; renderShop(); }; $('shopTabs').appendChild(b); });
+    $('shopItems').innerHTML = '';
+    items.filter(i => shopCat === '全部' || (i.cat || '其他') === shopCat).forEach(it => {
+      const b = document.createElement('button'); b.className = 'item';
+      b.innerHTML = `<span class="em">${it.e || '🛍️'}</span><span class="nm">${it.n}</span><span class="pr">$${it.p}${it.est ? '<small style="opacity:.6"> 約</small>' : ''}</span>`;
+      b.onclick = () => { cart.set(it.n, { it, q: (cart.get(it.n)?.q || 0) + 1 }); sfx.beep(); renderCart(); };
+      $('shopItems').appendChild(b);
+    });
+    renderCart();
+  }
+  function cartTotal() { let t = 0; for (const { it, q } of cart.values()) t += it.p * q; return Math.round(t * 10) / 10; }
+  function renderCart() {
+    $('shopCash').textContent = `💵 ${money(E.cash)}`;
+    const el = $('cartList'); el.innerHTML = cart.size ? '' : '<div style="opacity:.6">撳左邊貨品加入</div>';
+    for (const [n, { it, q }] of cart) {
+      const row = document.createElement('div'); row.className = 'cl';
+      row.innerHTML = `<span>${it.e || ''} ${n}</span><button>−</button><b>${q}</b><button>+</button>`;
+      const [minus, plus] = row.querySelectorAll('button');
+      minus.onclick = () => { if (q <= 1) cart.delete(n); else cart.set(n, { it, q: q - 1 }); renderCart(); };
+      plus.onclick = () => { cart.set(n, { it, q: q + 1 }); renderCart(); };
+      el.appendChild(row);
+    }
+    $('cartTotal').textContent = `合計 ${money(cartTotal())}`;
+  }
+  $('checkout').onclick = () => {
+    const total = cartTotal();
+    if (!cart.size) return toast('購物籃係空嘅');
+    if (total > E.cash) { sfx.error(); return toast(`💸 唔夠錢！要 ${money(total)}，你得 ${money(E.cash)}。去銀行賣金條或者提錢啦`, 3500); }
+    E.cash = Math.round((E.cash - total) * 10) / 10;
+    let count = 0;
+    for (const [n, { it, q }] of cart) { const b = E.bag[n] || { e: it.e, c: 0, shop: shopKey, cat: it.cat }; b.c += q; E.bag[n] = b; count += q; }
+    cart.clear(); saveEcon(); sfx.pickup(); renderCart();
+    toast(`🧾 多謝惠顧！共 ${count} 件，${money(total)}，已放入🎒背包`, 3000);
+  };
+  $('shopClose').onclick = () => closeModal('shopModal');
+
+  // ---------- 背包 ----------
+  const nonFood = /日用|清潔|紙|家居|個人護理|洗|用品/;
+  function renderBag() {
+    const el = $('bagList'); el.innerHTML = '';
+    const entries = Object.entries(E.bag).filter(([, b]) => b.c > 0);
+    if (!entries.length) el.innerHTML = '<div style="padding:10px;opacity:.7">背包空空如也。去餐廳或者超市買嘢啦！</div>';
+    entries.forEach(([n, b]) => {
+      const use = nonFood.test(b.cat || '') ? '用' : /飲|茶|咖啡|奶|汽水|果汁/.test((b.cat || '') + n) ? '飲' : '食';
+      const d = document.createElement('div'); d.className = 'item';
+      d.innerHTML = `<span class="em">${b.e || '🛍️'}</span><span class="nm">${n}</span><span>x ${b.c}</span><button class="opt">${use}</button>`;
+      d.querySelector('button').onclick = () => {
+        b.c--; if (b.c <= 0) delete E.bag[n]; saveEcon(); sfx.pickup();
+        toast(use === '用' ? `🧻 用咗 ${n}` : use === '飲' ? `🥤 飲咗 ${n}，好解渴！` : `😋 食咗 ${n}，好味！`); renderBag();
+      };
+      el.appendChild(d);
+    });
+  }
+  $('btnBag').onclick = () => { renderBag(); $('bagModal').classList.remove('hidden'); sfx.click(); };
+  $('bagClose').onclick = () => closeModal('bagModal');
+
+  // ---------- 銀行 ----------
+  function openBank(name) { $('bankName').textContent = name; $('bankMsg').textContent = ''; renderBank(); $('bankModal').classList.remove('hidden'); sfx.click(); }
+  function renderBank() {
+    $('bCash').textContent = money(E.cash); $('bSave').textContent = money(E.save);
+    $('bGold').textContent = `${P.gold} 條`; $('bVault').textContent = `${E.vault} 條`;
+    $('goldPrice').textContent = `今日金價（每條 = 1 両 / 37.429 克 足金）：銀行收購 ${money(goldBuy)}｜賣出 ${money(goldSell)}${GOLD.date ? '（' + GOLD.date + ' 參考價）' : ''}`;
+    $('bankModal').querySelector('.box').style.setProperty('--shopC', '#0b4f8a');
+  }
+  const bankActions = {
+    depGold1: () => P.gold > 0 ? (P.gold--, E.vault++, '🥇 存咗 1 條金條入保險箱') : '你身上冇金條',
+    depGoldAll: () => { if (!P.gold) return '你身上冇金條'; const n = P.gold; E.vault += n; P.gold = 0; return `🥇 存咗 ${n} 條金條入保險箱`; },
+    wdGold1: () => E.vault > 0 ? (E.vault--, P.gold++, '🥇 由保險箱攞咗 1 條金條') : '保險箱冇金條',
+    sell1: () => P.gold > 0 ? (P.gold--, E.cash += goldBuy, `💰 賣咗 1 條金條，收到 ${money(goldBuy)}`) : '你身上冇金條可以賣（保險箱嘅要先提出嚟）',
+    sellAll: () => { if (!P.gold) return '你身上冇金條可以賣'; const n = P.gold, v = n * goldBuy; P.gold = 0; E.cash += v; return `💰 賣咗 ${n} 條金條，收到 ${money(v)}`; },
+    dep100: () => dep(100), dep1000: () => dep(1000), depAll: () => dep(E.cash),
+    wd100: () => wd(100), wd1000: () => wd(1000), wdAll: () => wd(E.save),
+  };
+  function dep(a) { a = Math.min(a, E.cash); if (a <= 0) return '你身上冇現金'; E.cash -= a; E.save += a; return `🏦 存入 ${money(a)}`; }
+  function wd(a) { a = Math.min(a, E.save); if (a <= 0) return '戶口冇錢'; E.save -= a; E.cash += a; return `🏧 提取 ${money(a)}`; }
+  document.querySelectorAll('#bankModal [data-b]').forEach(b => b.onclick = () => {
+    const msg = bankActions[b.dataset.b]();
+    E.cash = Math.round(E.cash * 10) / 10; E.save = Math.round(E.save * 10) / 10;
+    saveEcon(); renderBank(); $('bankMsg').textContent = msg; sfx.beep();
+  });
+  $('bankClose').onclick = () => closeModal('bankModal');
 
   // ---------- 我嘅角色 ----------
   const me = buildAvatar(look); scene.add(me);
@@ -193,6 +313,14 @@ function startGame(myName) {
       toast(on ? '🎤 語音已開：你可以講嘢同聽到其他人' : '🔇 語音已關');
     } catch (e) { toast('🎤 開唔到咪：' + (e.message || e), 4000); }
   };
+  function toggleFP() {
+    firstPerson = !firstPerson; sfx.click();
+    $('btnFP').classList.toggle('on', firstPerson);
+    if (firstPerson) camPitch = 0; else camPitch = Math.max(camPitch, -0.2) || 0.32;
+    toast(firstPerson ? '👁 第一身視角（拖畫面望四周，向上拖望天）' : '🎥 第三身視角');
+  }
+  $('btnFP').onclick = toggleFP;
+  addEventListener('keydown', e => { if (e.code === 'KeyV' && e.target.tagName !== 'INPUT') toggleFP(); });
   $('btnFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => { }); };
   $('btnSize').onclick = () => $('sizeBox').classList.toggle('hidden');
   $('sizeRange').oninput = e => { P.scale = +e.target.value; };
@@ -238,7 +366,7 @@ function startGame(myName) {
   cv.addEventListener('pointerdown', e => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); cv.setPointerCapture(e.pointerId); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); dist0 = camDist; } });
   cv.addEventListener('pointermove', e => {
     const p = ptrs.get(e.pointerId); if (!p) return;
-    if (ptrs.size === 1) { camYaw -= (e.clientX - p.x) * 0.006; camPitch = Math.min(1.45, Math.max(-0.35, camPitch + (e.clientY - p.y) * 0.005)); }
+    if (ptrs.size === 1) { camYaw -= (e.clientX - p.x) * 0.006; camPitch = Math.min(1.45, Math.max(firstPerson ? -1.45 : -1.2, camPitch + (e.clientY - p.y) * 0.005)); }
     p.x = e.clientX; p.y = e.clientY;
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0) camDist = Math.min(40, Math.max(1.5, dist0 * pinch0 / d)); $('zoomRange').value = camDist; }
   });
@@ -475,18 +603,33 @@ function startGame(myName) {
     const tb = world.toiletBounds;
     const inToilet = P.pos.x > tb.x0 && P.pos.x < tb.x1 && P.pos.z > tb.z0 && P.pos.z < tb.z1 && P.pos.y < tb.y1;
     world.update(dt, elapsed, P.pos, camera, inToilet);
+    shops.update(dt, elapsed);
 
     // 鏡頭
     const target = new V3(P.pos.x, P.pos.y + 1.5 * P.scale, P.pos.z);
-    let dist = camDist * Math.max(1, P.scale * 0.8);
     const dir = new V3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
-    ray.set(target, dir); ray.far = dist;
-    const hit = ray.intersectObjects(camBlockers, false)[0];
-    if (hit) dist = Math.max(0.6, hit.distance - 0.25);
-    camera.position.copy(target).addScaledVector(dir, dist);
-    if (P.pos.y < -1 && camera.position.y > -0.6) camera.position.y = -0.6;
+    let look;
+    if (firstPerson) {
+      // 第一身：鏡頭喺眼睛位置，可以自由向上望天、向下望地
+      me.visible = false;
+      camera.position.set(P.pos.x, P.pos.y + 1.6 * P.scale, P.pos.z);
+      look = camera.position.clone().sub(dir);
+      P.face = camYaw + Math.PI;
+    } else {
+      me.visible = true;
+      let dist = camDist * Math.max(1, P.scale * 0.8);
+      ray.set(target, dir); ray.far = dist;
+      const hit = ray.intersectObjects(camBlockers, false)[0];
+      if (hit) dist = Math.max(0.6, hit.distance - 0.25);
+      camera.position.copy(target).addScaledVector(dir, dist);
+      // 鏡頭唔可以穿落地底；向上望時鏡頭貼地，視線向天空抬高
+      if (camera.position.y < P.pos.y + 0.25) camera.position.y = P.pos.y + 0.25;
+      if (P.pos.y < -1 && camera.position.y > -0.6) camera.position.y = -0.6;
+      look = target.clone();
+      if (camPitch < 0) look.y += -camPitch * dist * 1.4;
+    }
     if (shake > 0) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 0.8); }
-    camera.lookAt(target);
+    camera.lookAt(look);
 
     // 渲染
     renderer.setScissorTest(false);

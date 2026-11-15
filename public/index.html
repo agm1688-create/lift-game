@@ -93,6 +93,40 @@
 
   #toast { position:fixed; left:50%; top:16%; transform:translateX(-50%); background:rgba(0,0,0,.8); padding:10px 18px; border-radius:20px; font-size:16px; z-index:30; pointer-events:none; transition:opacity .3s; opacity:0; text-align:center; }
   #flash { position:fixed; inset:0; z-index:20; pointer-events:none; background:radial-gradient(#fff6c0,#ff7a00 40%,rgba(255,0,0,.4)); opacity:0; }
+  /* 商店 / 銀行 / 背包 */
+  .shopBox { width:min(860px,96vw); max-height:92vh; display:flex; flex-direction:column; padding:0 !important; overflow:hidden; text-align:left !important; }
+  #shopHead, #bankHead, #bagHead { display:flex; align-items:center; gap:12px; padding:10px 14px; font-size:18px; font-weight:bold; background:var(--shopC,#333); color:var(--shopT,#fff); }
+  #shopCash { margin-left:auto; font-size:14px; background:rgba(0,0,0,.35); padding:4px 10px; border-radius:12px; color:#fff; }
+  .x { margin-left:auto; width:34px; height:34px; border-radius:50%; background:rgba(0,0,0,.35); color:#fff; font-size:16px; }
+  #shopCash + .x { margin-left:0; }
+  #shopTabs { display:flex; gap:6px; padding:8px 10px; overflow-x:auto; background:#141a28; flex-shrink:0; }
+  #shopTabs button { padding:5px 12px; border-radius:14px; background:#2a3550; white-space:nowrap; font-size:13px; }
+  #shopTabs button.on { background:var(--gold); color:#2a1a00; font-weight:bold; }
+  #shopBody { display:flex; min-height:0; flex:1; }
+  #shopItems { flex:1; overflow-y:auto; padding:10px; display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; align-content:start; }
+  .item { background:#222c42; border-radius:12px; padding:8px; display:flex; flex-direction:column; gap:3px; text-align:left; }
+  .item .em { font-size:28px; }
+  .item .nm { font-size:13px; line-height:1.3; min-height:34px; }
+  .item .pr { color:var(--gold); font-weight:bold; }
+  .item:active { transform:scale(.97); background:#2d3a58; }
+  #cart { width:220px; border-left:1px solid #333; padding:10px; display:flex; flex-direction:column; gap:6px; background:#121826; }
+  #cart h4 { margin:0; }
+  #cartList { flex:1; overflow-y:auto; font-size:13px; }
+  .cl { display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px dashed #333; }
+  .cl span:first-child { flex:1; }
+  .cl button { width:22px; height:22px; border-radius:50%; background:#444; font-size:12px; }
+  #cartTotal { font-weight:bold; font-size:16px; color:var(--gold); }
+  #checkout { padding:10px; border-radius:10px; background:linear-gradient(#5fd35f,#1f9a1f); font-weight:bold; font-size:15px; }
+  #bankBody { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:12px; }
+  .bcard { background:#222c42; border-radius:12px; padding:10px; font-size:12px; }
+  .bcard b { display:block; font-size:18px; color:var(--gold); margin-top:4px; }
+  #goldPrice { padding:0 14px; font-size:13px; opacity:.85; }
+  .brow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 14px; }
+  .brow span { width:64px; font-size:14px; }
+  .brow button { padding:7px 11px; border-radius:10px; background:#2d3a5a; font-size:13px; }
+  #bankMsg { padding:8px 14px 14px; color:#9f9; min-height:20px; font-size:14px; }
+  #bagList { padding:10px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
+  @media (max-width:640px), (max-height:500px) { #cart { width:170px; } #shopItems { grid-template-columns:repeat(auto-fill,minmax(105px,1fr)); } .item .em { font-size:22px; } #bankBody { grid-template-columns:repeat(4,1fr); padding:8px; } .bcard b { font-size:15px; } }
   #wifi { position:absolute; left:calc(10px + env(safe-area-inset-left)); top:120px; background:var(--bg); padding:4px 10px; border-radius:10px; font-size:13px; }
 </style>
 <script type="importmap">
@@ -150,9 +184,12 @@
     <div>高度 <b id="altTxt">0 m</b></div>
     <div id="layerTxt">大廈樓層</div>
     <div>🥇 金條 <b id="goldTxt">0</b>　👥 在線 <b id="onlineTxt">1</b></div>
+    <div>💵 現金 <b id="cashTxt">HK$0</b></div>
   </div>
   <div id="wifi" class="hidden">📶 Wi-Fi 已連接</div>
   <div id="topR">
+    <button class="tb" id="btnFP" title="第一身 (V)">👁<small>第一身</small></button>
+    <button class="tb" id="btnBag" title="背包">🎒<small>背包</small></button>
     <button class="tb" id="btnVoice" title="語音">🎤<small>語音</small></button>
     <button class="tb" id="btnCctv" title="CCTV">📹<small>CCTV</small></button>
     <button class="tb" id="btnSize" title="角色大小">🔍<small>大小</small></button>
@@ -179,6 +216,51 @@
   </div>
   <div id="cctvFrame" class="hidden"><span>● REC</span><i id="cctvLbl">CAM</i></div>
 </div>
+
+<!-- 商店 / 餐廳 -->
+<div id="shopModal" class="modal hidden"><div class="box shopBox">
+  <div id="shopHead"><span id="shopName">商店</span><span id="shopCash"></span><button class="x" id="shopClose">✕</button></div>
+  <div id="shopTabs"></div>
+  <div id="shopBody">
+    <div id="shopItems"></div>
+    <div id="cart">
+      <h4>🛒 購物籃</h4>
+      <div id="cartList"></div>
+      <div id="cartTotal">合計 HK$0</div>
+      <button id="checkout">💳 埋單 / 結帳</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- 銀行 -->
+<div id="bankModal" class="modal hidden"><div class="box shopBox">
+  <div id="bankHead"><span>🏦 <span id="bankName">銀行</span></span><button class="x" id="bankClose">✕</button></div>
+  <div id="bankBody">
+    <div class="bcard"><div>身上現金</div><b id="bCash">HK$0</b></div>
+    <div class="bcard"><div>銀行存款</div><b id="bSave">HK$0</b></div>
+    <div class="bcard"><div>身上金條</div><b id="bGold">0</b></div>
+    <div class="bcard"><div>保險箱金條</div><b id="bVault">0</b></div>
+  </div>
+  <div id="goldPrice"></div>
+  <div class="brow"><span>🥇 金條</span>
+    <button data-b="depGold1">存 1 條</button><button data-b="depGoldAll">全部存入</button>
+    <button data-b="wdGold1">提 1 條</button>
+  </div>
+  <div class="brow"><span>💰 賣金</span>
+    <button data-b="sell1">賣 1 條</button><button data-b="sellAll">全部賣出</button>
+  </div>
+  <div class="brow"><span>💵 現金</span>
+    <button data-b="dep100">存 $100</button><button data-b="dep1000">存 $1000</button><button data-b="depAll">全部存</button>
+    <button data-b="wd100">提 $100</button><button data-b="wd1000">提 $1000</button><button data-b="wdAll">全部提</button>
+  </div>
+  <div id="bankMsg"></div>
+</div></div>
+
+<!-- 背包 -->
+<div id="bagModal" class="modal hidden"><div class="box shopBox">
+  <div id="bagHead"><span>🎒 背包</span><button class="x" id="bagClose">✕</button></div>
+  <div id="bagList"></div>
+</div></div>
 
 <div id="keyModal" class="modal hidden"><div class="box">
   <h3 id="keyTitle">🔑 請揀 Key</h3>
