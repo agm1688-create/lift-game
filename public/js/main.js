@@ -8,6 +8,7 @@ import { Net, Voice } from './net.js';
 import { initAudio, sfx } from './audio.js';
 import { altOfFloor, layerName, fmtAlt, floorLabel, MAX_FLOOR } from './alt.js';
 import { buildShops } from './shops.js';
+import { buildNPCs } from './npcs.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -104,6 +105,7 @@ function startGame(myName) {
   const world = buildWorld(scene, api);
   const lifts = buildLifts(scene, api);
   const shops = buildShops(scene, api, CATALOG.SHOPS);
+  const npcs = buildNPCs(scene, shops.spots);
   const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders);
   const interactables = world.interactables.concat(lifts.interactables, shops.interactables);
   const camBlockers = [];
@@ -604,6 +606,7 @@ function startGame(myName) {
     const inToilet = P.pos.x > tb.x0 && P.pos.x < tb.x1 && P.pos.z > tb.z0 && P.pos.z < tb.z1 && P.pos.y < tb.y1;
     world.update(dt, elapsed, P.pos, camera, inToilet);
     shops.update(dt, elapsed);
+    npcs.update(dt, T);
 
     // 鏡頭
     const target = new V3(P.pos.x, P.pos.y + 1.5 * P.scale, P.pos.z);

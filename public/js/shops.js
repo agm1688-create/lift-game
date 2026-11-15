@@ -33,7 +33,39 @@ function menuBoardTex(title, items, bg, fg, accent) {
 }
 
 export function buildShops(scene, api, SHOPS = {}) {
-  const colliders = [], interactables = [], updaters = [];
+  const colliders = [], interactables = [], updaters = [], spots = {};
+  // NPC 用嘅位置（座位、通道、櫃位），要同下面擺設嘅位置一致
+  function shopSpots(S, cx, x0, x1) {
+    const base = { key: S.key, type: S.type, cx, street: [cx, 31], doorOut: [cx, Z0 - 1.4], doorIn: [cx, Z0 + 1.2] };
+    if (S.type === 'fast') {
+      const ax = cx + 0.8, seats = [];
+      for (let r = 0; r < 2; r++) for (let c = 0; c < Math.floor((S.w - 3) / 2.6); c++) {
+        const tx = x0 + 2.4 + c * 2.6, tz = Z0 + 2.2 + r * 2.6;
+        if ((Math.abs(tx - cx) < 1.6 && r === 0) || Math.abs(tx - ax) > 2) continue;
+        seats.push({ x: tx, z: tz - 0.8, face: 0 }, { x: tx, z: tz + 0.8, face: Math.PI });
+      }
+      return { ...base, aisle: ax, counter: [ax, Z1 - 4.4], seats };
+    }
+    if (S.type === 'bar') {
+      const seats = [];
+      for (let i = 0; i < 6; i++) seats.push({ x: x0 + 2.2 + i * ((S.w - 4.4) / 5), z: Z0 + 3.9, face: 0, high: true });
+      return { ...base, front: Z0 + 3.0, seats };
+    }
+    if (S.type === 'chinese') {
+      const seats = [];
+      [3.2, 6.6].forEach(dz => {
+        seats.push({ x: cx - 5 + 1.35, z: Z0 + dz, face: -Math.PI / 2 });
+        seats.push({ x: cx - 1.35, z: Z0 + dz, face: Math.PI / 2 });
+      });
+      return { ...base, entry: [[cx - 1.8, Z0 + 1.4], [cx - 2.5, Z0 + 2.3]], aisle: cx - 2.5, seats };
+    }
+    if (S.type === 'market') {
+      const gaps = [cx - 2.15, cx + 2.15];
+      return { ...base, gaps, front: Z0 + 2.8, browseZ: [Z0 + 4.5, Z0 + 6.5, Z0 + 8.5], shelfX: [x0 + 3.2, cx, x0 + 11.8], checkout: [x0 + 4.6, Z0 + 1.6] };
+    }
+    const tellers = [0, 1, 2, 3].map(i => [x0 + 2 + i * ((S.w - 4) / 3), Z1 - 4.4]);
+    return { ...base, hall: [cx, Z0 + 6.5], tellers };
+  }
   const addCol = (x0, y0, z0, x1, y1, z1) => colliders.push({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)] });
   const mesh = (geo, mat, x, y, z, parent = scene) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
   const box = (x0, y0, z0, x1, y1, z1, mat, col = true) => {
@@ -93,6 +125,7 @@ export function buildShops(scene, api, SHOPS = {}) {
     else if (S.type === 'chinese') chinese(ctx);
     else if (S.type === 'market') market(ctx);
     else bank(ctx);
+    spots[S.key] = shopSpots(S, cx, x0, x1);
     // 門口互動（入去之後先開餐牌，銀行除外）
     const actZ = { fast: Z1 - 4, bar: Z0 + 3.2, chinese: Z0 + 2.2, market: Z0 + 2.4 }[S.type];
     if (S.type !== 'bank') inter([cx, 0, actZ], 2.6, () => `${S.act}（${name}）`, () => api.openShop(S.key, name, colors));
@@ -342,5 +375,5 @@ export function buildShops(scene, api, SHOPS = {}) {
     mesh(new THREE.SphereGeometry(0.45, 10, 8), std('#2e7d32'), x0 + 0.7, 0.9, Z0 + 4.2);
   }
 
-  return { colliders, interactables, update: (dt, t) => updaters.forEach(f => f(dt, t)) };
+  return { colliders, interactables, spots, update: (dt, t) => updaters.forEach(f => f(dt, t)) };
 }
