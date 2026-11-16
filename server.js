@@ -125,7 +125,7 @@ wss.on('connection', ws => {
       case 'world': if (me && typeof m.toiletLight === 'boolean') { world.toiletLight = m.toiletLight; broadcast({ t: 'world', world }); } break;
       case 'khit': {
         const st = me && me.st, dmg = Math.min(150, Math.max(0, Number(m.dmg) || 0));
-        if (!st || !st.mk || mon.s === 'dead' || Math.hypot(st.p[0] - mon.x, st.p[2] - mon.z) > 260) break;
+        if (!st || !st.mk || mon.s === 'dead' || Math.hypot(st.p[0] - mon.x, st.p[2] - mon.z) > 320) break;
         mon.hp = Math.max(0, mon.hp - dmg);
         if (mon.hp <= 0) { mon.s = 'dead'; mon.t0 = now; mon.respawn = now + 12000; broadcast({ t: 'ev', kind: 'kDead', by: me.name, ty: mon.ty }); }
         break;

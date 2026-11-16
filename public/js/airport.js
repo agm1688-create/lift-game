@@ -14,7 +14,7 @@ export const DX = -1700, DZ = -200;
 const sh = r => ({ x0: r.x0 + DX, x1: r.x1 + DX, z0: r.z0 + DZ, z1: r.z1 + DZ });
 const RW0 = { x0: 1960, x1: 3040, z0: -80, z1: -35 };
 export const RUNWAY = sh(RW0);
-const PAVED = [RW0, { x0: 1990, x1: 3010, z0: -20, z1: 10 }, { x0: 2080, x1: 2760, z0: 10, z1: 200 }, { x0: 2780, x1: 3020, z0: 10, z1: 190 }].map(sh);
+const PAVED = [RW0, { x0: 1990, x1: 3010, z0: -36, z1: 10 }, { x0: 2080, x1: 2760, z0: 10, z1: 200 }, { x0: 2780, x1: 3020, z0: 10, z1: 190 }].map(sh);
 const HELI_SPOTS = [2470, 2520, 2570, 2620];
 export const HELIPADS = [...HELI_SPOTS.map(x => [x + DX, 60 + DZ]), [55 - 16, -125 + 4, 80]];
 
@@ -195,13 +195,13 @@ export function buildAirport(scene, api) {
   const fleet = [];
   ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#ff7043', '#8e24aa', '#00acc1', '#f06292', '#6d4c41', '#ffffff'].forEach((c, k) => fleet.push(['plane', 2100 + k * 30, 40, c, Math.PI]));
   ['#c62828', '#1565c0', '#2e7d32', '#ff8f00'].forEach((c, k) => fleet.push(['jumbo', 2160 + k * 130, 140, c, 0]));
-  ['#607d8b', '#37474f'].forEach((c, k) => fleet.push(['fighter', 2860 + k * 50, 40, c, Math.PI]));
+  ['#607d8b', '#37474f'].forEach((c, k) => fleet.push(['fighter', 1985, -68 + k * 22, c, Math.PI / 2]));   // 停喺跑道西端，對正跑道
   HELI_SPOTS.forEach((x, k) => fleet.push(['heli', x, 60, ['#1565c0', '#6a1b9a', '#c62828', '#00897b'][k], 0]));
   const LABEL = { plane: '✈ 揸小型飛機', jumbo: '🛫 揸巨無霸客機', fighter: '🛩 揸戰鬥機', heli: '🚁 揸直升機' };
   fleet.forEach(([kind, x, z, c, ry]) => {
     const m = buildAircraft(kind, c); m.position.set(x, 0, z); m.rotation.y = ry; root.add(m);
     if (kind === 'heli') { const h = new THREE.Mesh(new THREE.CircleGeometry(8, 30), signMat('H', '#2b2f36', '#ffd54f', 'bold 90px sans-serif')); h.rotation.x = -Math.PI / 2; h.position.set(x, 0.03, z); root.add(h); }
-    const off = kind === 'jumbo' ? [10, -20] : kind === 'fighter' ? [6, 0] : [4, 0];
+    const off = kind === 'jumbo' ? [10, -20] : kind === 'fighter' ? [0, 6] : [4, 0];
     inter.push({ pos: new V3(x + off[0] + DX, 0, z + off[1] + DZ), r: kind === 'jumbo' ? 8 : 4, label: () => LABEL[kind], act: () => api.startFlight(kind, x + DX, z + DZ, ry, c) });
   });
   const sg = new THREE.Mesh(new THREE.PlaneGeometry(30, 3), signMat('✈ 自助租飛機：行埋去撳「揸」', '#0d47a1')); sg.position.set(2240, 4, 15); root.add(sg);

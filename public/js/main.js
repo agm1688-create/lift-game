@@ -13,10 +13,11 @@ import { buildHotel, roomDoor, ROOM_TYPES } from './hotel.js';
 import { buildPark } from './park.js';
 import { playMusic, currentMusic, TRACKS } from './music.js';
 import { buildBike, bikePose, buildCampers } from './vehicles.js';
-import { buildAirport, Flight, buildAircraft, AIR_KINDS } from './airport.js';
+import { buildAirport, Flight, buildAircraft, AIR_KINDS, RUNWAY } from './airport.js';
 import { buildArena, buildMech, animateMech, inStage, KAIJU, MECHS } from './arena.js';
-import { buildVillage } from './village.js';
-import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD } from './city.js';
+import { buildVillage, OX as VOX, OZ as VOZ } from './village.js';
+import { HKG } from './hkg_data.js';
+import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA } from './city.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -130,10 +131,10 @@ function startGame(myName) {
   const campers = buildCampers(scene, api);
   const airport = buildAirport(scene, api);
   const arena = buildArena(scene, api);
-  const village = buildVillage(scene);
+  const village = buildVillage(scene, { tp: (x, y, z) => api.teleport(x, y, z) });
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
   const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
   const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
@@ -711,58 +712,142 @@ function startGame(myName) {
     sfx.door(); toast(c.moving ? `🚐 跳咗上${c.name.slice(3)}！佢行緊，可以喺入面周圍行` : `🚐 上咗${c.name.slice(3)}，${Math.ceil(c.restLeft)} 秒後開車，會圍住成個小鎮行一圈`, 3500);
   }
 
-  // ================= 大地圖（撳一下傳送）=================
-  const mapCv = $('mapCv'), mg = mapCv.getContext('2d'), MS = mapCv.width / (HALF_WORLD * 2);
-  const w2m = (x, z) => [(x + HALF_WORLD) * MS, (z + HALF_WORLD) * MS];
-  let mapBase = null;
-  function drawMapBase() {
-    const c = document.createElement('canvas'); c.width = c.height = mapCv.width; const g = c.getContext('2d');
-    g.fillStyle = '#5a9a4a'; g.fillRect(0, 0, c.width, c.height);
-    for (let i = -24; i <= 24; i++) for (let j = -24; j <= 24; j++) {
-      const t = district(i, j); if (t === 'none') continue;
-      const [x, y] = w2m(i * CHUNK - 100, j * CHUNK - 100); g.fillStyle = DISTRICT_COLOR[t]; g.fillRect(x, y, CHUNK * MS + 0.5, CHUNK * MS + 0.5);
-    }
-    g.strokeStyle = 'rgba(60,60,60,.55)'; g.lineWidth = 1;
-    for (let k = -24; k <= 25; k++) { const v = (k * CHUNK - 100 + HALF_WORLD) * MS; g.beginPath(); g.moveTo(v, 0); g.lineTo(v, c.height); g.moveTo(0, v); g.lineTo(c.width, v); g.stroke(); }
-    const [tx, ty] = w2m(TOWN.x0, TOWN.z0); g.fillStyle = '#ffd54f'; g.fillRect(tx, ty, (TOWN.x1 - TOWN.x0) * MS, (TOWN.z1 - TOWN.z0) * MS);
-    g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#111';
-    g.fillText('🏙 小鎮（柏熙酒店・遊樂場）', w2m(0, 0)[0], w2m(0, -320)[1]);
-    LANDMARKS.forEach(l => { const [x, y] = w2m(l.i * CHUNK, l.j * CHUNK); g.fillText(l.name, x, y + 4); });
-    g.fillText('✈ 國際機場', w2m(800, 0)[0], w2m(0, -120)[1]); g.fillText('🏘 豪景花園', w2m(-700, 0)[0], w2m(0, 600)[1]); g.fillText('⚔ 怪獸決戰場', w2m(-1700, 0)[0], w2m(0, -100)[1]);
-    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(8, c.height - 26, 120, 18); g.fillStyle = '#fff'; g.font = '11px sans-serif'; g.textAlign = 'left';
-    g.fillRect(14, c.height - 14, 1000 * MS, 3); g.fillText('1 公里', 14 + 1000 * MS + 6, c.height - 11);
-    return c;
+  // ================= 大地圖（可以縮放 / 拖動；撳一下傳送）=================
+  const mapCv = $('mapCv'), mg = mapCv.getContext('2d');
+  const MAP = { cx: 0, cz: 0, s: 0.1, min: 0, max: 6, W: 600, H: 600, dpr: 1 };   // s = 每米幾多 px
+  function mapResize() {
+    const r = mapCv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+    MAP.W = Math.max(200, r.width); MAP.H = Math.max(200, r.height); MAP.dpr = dpr;
+    mapCv.width = Math.round(MAP.W * dpr); mapCv.height = Math.round(MAP.H * dpr);
+    MAP.min = Math.min(MAP.W, MAP.H) / (HALF_WORLD * 2);
+    MAP.s = Math.max(MAP.min, Math.min(MAP.max, MAP.s));
+  }
+  const w2m = (x, z) => [(x - MAP.cx) * MAP.s + MAP.W / 2, (z - MAP.cz) * MAP.s + MAP.H / 2];
+  const m2w = (px, py) => [(px - MAP.W / 2) / MAP.s + MAP.cx, (py - MAP.H / 2) / MAP.s + MAP.cz];
+  function mapClamp() { const lim = HALF_WORLD; MAP.cx = Math.max(-lim, Math.min(lim, MAP.cx)); MAP.cz = Math.max(-lim, Math.min(lim, MAP.cz)); }
+  function mapZoom(f, px = MAP.W / 2, py = MAP.H / 2) {
+    const [wx, wz] = m2w(px, py);
+    MAP.s = Math.max(MAP.min, Math.min(MAP.max, MAP.s * f));
+    MAP.cx = wx - (px - MAP.W / 2) / MAP.s; MAP.cz = wz - (py - MAP.H / 2) / MAP.s; mapClamp(); drawMap();
+  }
+  const rectM = (r, fill) => { const [a, b] = w2m(r.x0, r.z0), [c, d] = w2m(r.x1, r.z1); mg.fillStyle = fill; mg.fillRect(a, b, c - a, d - b); };
+  function label(txt, x, z, size = 18) {
+    const [px, py] = w2m(x, z); if (px < -200 || px > MAP.W + 200 || py < -40 || py > MAP.H + 40) return;
+    mg.font = `bold ${size}px system-ui, sans-serif`; mg.textAlign = 'center'; mg.textBaseline = 'middle';
+    mg.lineWidth = 4; mg.strokeStyle = 'rgba(255,255,255,.92)'; mg.strokeText(txt, px, py); mg.fillStyle = '#111'; mg.fillText(txt, px, py);
+  }
+  function polyM(flat, ox, oz, fill, stroke) {
+    mg.beginPath(); for (let i = 0; i < flat.length; i += 2) { const [px, py] = w2m(flat[i] + ox, flat[i + 1] + oz); i ? mg.lineTo(px, py) : mg.moveTo(px, py); } mg.closePath();
+    if (fill) { mg.fillStyle = fill; mg.fill(); } if (stroke) { mg.strokeStyle = stroke; mg.lineWidth = 1; mg.stroke(); }
   }
   function drawMap() {
-    if (!mapBase) mapBase = drawMapBase();
-    mg.drawImage(mapBase, 0, 0);
-    for (const r of remotes.values()) { if (!r.st) continue; const [x, y] = w2m(r.pos.x, r.pos.z); mg.fillStyle = '#2196f3'; mg.beginPath(); mg.arc(x, y, 5, 0, 7); mg.fill(); }
+    const g = mg, s = MAP.s;
+    g.setTransform(MAP.dpr, 0, 0, MAP.dpr, 0, 0);
+    g.fillStyle = '#335'; g.fillRect(0, 0, MAP.W, MAP.H);
+    // 區塊（只畫睇得到嘅）
+    const [wx0, wz0] = m2w(0, 0), [wx1, wz1] = m2w(MAP.W, MAP.H);
+    const i0 = Math.max(-24, Math.floor((wx0 + 100) / CHUNK)), i1 = Math.min(24, Math.ceil((wx1 + 100) / CHUNK));
+    const j0 = Math.max(-24, Math.floor((wz0 + 100) / CHUNK)), j1 = Math.min(24, Math.ceil((wz1 + 100) / CHUNK));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const t = district(i, j); if (t === 'none') continue;
+      const [x, y] = w2m(i * CHUNK - 100, j * CHUNK - 100); g.fillStyle = DISTRICT_COLOR[t]; g.fillRect(x, y, CHUNK * s + 0.5, CHUNK * s + 0.5);
+    }
+    // 馬路網
+    g.strokeStyle = s > 0.4 ? '#555' : 'rgba(60,60,60,.55)'; g.lineWidth = Math.max(1, 12 * s);
+    g.beginPath();
+    for (let k = i0; k <= i1 + 1; k++) { const [v] = w2m(k * CHUNK - 100, 0); g.moveTo(v, 0); g.lineTo(v, MAP.H); }
+    for (let k = j0; k <= j1 + 1; k++) { const [, v] = w2m(0, k * CHUNK - 100); g.moveTo(0, v); g.lineTo(MAP.W, v); }
+    g.stroke();
+    rectM(TOWN, '#ffd54f');
+    rectM(RUNWAY, '#3c3f44');
+    rectM(VILLAGE, DISTRICT_COLOR.village);
+    if (village.sea) polyM(village.sea, 0, 0, '#4aa3df');
+    // 拉近啲就畫埋豪景花園每座樓 + 柏熙酒店
+    if (s > 0.25) {
+      for (const r of HKG.r) { if (r[1] <= 2.5) continue; g.strokeStyle = r[0] === 'motorway' ? '#ef6c00' : '#666'; g.lineWidth = Math.max(1, r[1] * s); g.beginPath(); for (let i = 0; i < r[3].length; i += 2) { const [px, py] = w2m(r[3][i] + VOX, r[3][i + 1] + VOZ); i ? g.lineTo(px, py) : g.moveTo(px, py); } g.stroke(); }
+      for (const [name, , kind, flat] of HKG.b) polyM(flat, VOX, VOZ, kind === 'park' ? '#9e9e9e' : kind === 'apt' ? '#fff3e0' : '#d7ccc8', '#5d4037');
+      if (s > 2.2) for (const [name, , kind, flat] of HKG.b) { if (kind !== 'apt' && kind !== 'mall') continue; let x = 0, z = 0; for (let i = 0; i < flat.length; i += 2) { x += flat[i]; z += flat[i + 1]; } label(name.split(' ')[0], x / (flat.length / 2) + VOX, z / (flat.length / 2) + VOZ, 13); }
+      const [hx, hy] = w2m(55, -125); g.fillStyle = '#c9a227'; g.beginPath(); g.arc(hx, hy, Math.max(4, 70 * s), 0, 7); g.fill();
+    }
+    // 地方名（大字）
+    const big = s < 0.2 ? 16 : 19;
+    label('🏙 小鎮（柏熙酒店・遊樂場）', 0, s > 0.25 ? -330 : 190, big);
+    LANDMARKS.forEach(l => label(l.name, l.i * CHUNK, l.j * CHUNK, big));
+    label('✈ 國際機場', 820, s > 0.25 ? -320 : -90, big);
+    label('🏘 豪景花園', VOX, s > 0.25 ? VILLAGE.z0 - 25 : VOZ, big);
+    label('⚔ 怪獸決戰場', -1700, -100, big);
+    if (s > 0.6) { label('🏨 柏熙酒店', 55, -125, 15); }
+    // 玩家
+    for (const r of remotes.values()) { if (!r.st) continue; const [x, y] = w2m(r.pos.x, r.pos.z); g.fillStyle = '#2196f3'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); g.stroke(); }
     const [px, py] = w2m(P.pos.x, P.pos.z);
-    mg.save(); mg.translate(px, py); mg.rotate(-P.face + Math.PI); mg.fillStyle = '#fff'; mg.strokeStyle = '#d32f2f'; mg.lineWidth = 2;
-    mg.beginPath(); mg.moveTo(0, -9); mg.lineTo(6, 7); mg.lineTo(0, 3); mg.lineTo(-6, 7); mg.closePath(); mg.fill(); mg.stroke(); mg.restore();
+    g.save(); g.translate(px, py); g.rotate(-P.face + Math.PI); g.fillStyle = '#fff'; g.strokeStyle = '#d32f2f'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 4); g.lineTo(-9, 10); g.closePath(); g.fill(); g.stroke(); g.restore();
+    // 比例尺
+    const nice = [10, 20, 50, 100, 200, 500, 1000, 2000], L = nice.find(n => n * s > 70) || 2000;
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(8, MAP.H - 34, L * s + 90, 26); g.fillStyle = '#fff'; g.fillRect(16, MAP.H - 24, L * s, 5);
+    g.font = 'bold 15px system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(L >= 1000 ? `${L / 1000} 公里` : `${L} 米`, 24 + L * s, MAP.H - 21);
     const t = district(Math.round(P.pos.x / CHUNK), Math.round(P.pos.z / CHUNK));
     $('mapInfo').textContent = `你而家喺：${DISTRICT_NAME[t] || '野外'}（${Math.round(P.pos.x)}, ${Math.round(P.pos.z)}）`;
   }
   let mapTimer = null;
-  function openMap() { $('mapModal').classList.remove('hidden'); drawMap(); clearInterval(mapTimer); mapTimer = setInterval(drawMap, 500); sfx.click(); }
+  function openMap() {
+    $('mapModal').classList.remove('hidden'); mapResize();
+    if (!MAP.opened) { MAP.opened = true; MAP.s = Math.max(MAP.min, 0.12); }
+    MAP.cx = P.pos.x; MAP.cz = P.pos.z; mapClamp();
+    drawMap(); clearInterval(mapTimer); mapTimer = setInterval(drawMap, 500); sfx.click();
+  }
   function closeMap() { $('mapModal').classList.add('hidden'); clearInterval(mapTimer); }
   $('btnMap').onclick = openMap; $('mapClose').onclick = closeMap;
+  $('mapIn').onclick = () => mapZoom(1.6); $('mapOut').onclick = () => mapZoom(1 / 1.6);
+  $('mapAll').onclick = () => { MAP.s = MAP.min; MAP.cx = MAP.cz = 0; drawMap(); };
+  $('mapMe').onclick = () => { MAP.cx = P.pos.x; MAP.cz = P.pos.z; MAP.s = Math.max(MAP.s, 0.5); drawMap(); };
+  addEventListener('resize', () => { if (!$('mapModal').classList.contains('hidden')) { mapResize(); drawMap(); } });
   addEventListener('keydown', e => { if (e.code === 'KeyM' && e.target.tagName !== 'INPUT') ($('mapModal').classList.contains('hidden') ? openMap() : closeMap()); });
+  mapCv.addEventListener('wheel', e => { e.preventDefault(); const r = mapCv.getBoundingClientRect(); mapZoom(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  // 拖動 / 兩隻手指縮放 / 撳一下（冇郁）就傳送
+  const mptrs = new Map(); let mdrag = null;
   mapCv.addEventListener('pointerdown', e => {
+    mapCv.setPointerCapture(e.pointerId); mptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    mdrag = { moved: mptrs.size > 1, x: e.clientX, y: e.clientY, cx: MAP.cx, cz: MAP.cz, pinch: null };
+    if (mptrs.size === 2) { const [a, b] = [...mptrs.values()]; mdrag.pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: MAP.s }; }
+  });
+  mapCv.addEventListener('pointermove', e => {
+    if (!mdrag || !mptrs.has(e.pointerId)) return; mptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (mptrs.size === 2 && mdrag.pinch) {
+      const [a, b] = [...mptrs.values()], r = mapCv.getBoundingClientRect(), d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      mapZoom(mdrag.pinch.s * d / mdrag.pinch.d / MAP.s, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top); mdrag.moved = true; return;
+    }
+    if (Math.hypot(e.clientX - mdrag.x, e.clientY - mdrag.y) > 6) mdrag.moved = true;
+    if (mdrag.moved && mptrs.size === 1) { MAP.cx = mdrag.cx - (e.clientX - mdrag.x) / MAP.s; MAP.cz = mdrag.cz - (e.clientY - mdrag.y) / MAP.s; mapClamp(); drawMap(); }
+  });
+  const mptrEnd = e => {
+    if (!mptrs.has(e.pointerId)) return; mptrs.delete(e.pointerId);
+    if (!mdrag || mptrs.size) { if (mptrs.size === 1 && mdrag) { const [p] = [...mptrs.values()]; mdrag = { moved: true, x: p[0], y: p[1], cx: MAP.cx, cz: MAP.cz }; } return; }
+    const wasTap = !mdrag.moved && e.type === 'pointerup'; mdrag = null;
+    if (!wasTap) return;
     const r = mapCv.getBoundingClientRect();
-    let x = (e.clientX - r.left) / r.width * HALF_WORLD * 2 - HALF_WORLD, z = (e.clientY - r.top) / r.height * HALF_WORLD * 2 - HALF_WORLD;
+    let [x, z] = m2w(e.clientX - r.left, e.clientY - r.top);
+    mapTeleport(x, z);
+  };
+  ['pointerup', 'pointercancel'].forEach(t => mapCv.addEventListener(t, mptrEnd));
+  function mapTeleport(x, z) {
     x = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, x)); z = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, z));
-    const inTownXZ = x > TOWN.x0 && x < TOWN.x1 && z > TOWN.z0 && z < TOWN.z1;
-    if (inTownXZ) { x = SPAWN.x; z = SPAWN.z; }
+    const inR = R => x > R.x0 && x < R.x1 && z > R.z0 && z < R.z1;
+    let name;
+    if (inR(TOWN)) { x = SPAWN.x; z = SPAWN.z; name = '小鎮'; }
+    else if (inR(VILLAGE)) { x = village.center.x; z = village.center.z; name = '豪景花園'; }
+    else if (inR(AIRPORT)) { x = airport.spawn.x; z = airport.spawn.z; name = '國際機場'; }
+    else if (inR(ARENA)) { x = arena.gate.x; z = arena.gate.z; name = '怪獸決戰場（閘口）'; }
     else {
       // 傳送去最近嘅馬路（唔會卡喺大廈入面）
       const rx = Math.round((x + 100) / CHUNK) * CHUNK - 100, rz = Math.round((z + 100) / CHUNK) * CHUNK - 100;
       if (Math.abs(x - rx) < Math.abs(z - rz)) x = rx; else z = rz;
+      name = DISTRICT_NAME[district(Math.round(x / CHUNK), Math.round(z / CHUNK))] || '野外';
     }
     if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff();
     P.camper = -1; api.teleport(x, 0.1, z); city.loadAll(P.pos); closeMap();
-    sfx.whoosh(); toast(`✨ 傳送咗去 ${inTownXZ ? '小鎮' : DISTRICT_NAME[district(Math.round(x / CHUNK), Math.round(z / CHUNK))] || '野外'}`);
-  });
+    sfx.whoosh(); toast(`✨ 傳送咗去 ${name}`);
+  }
 
   // ================= 飛機 / 直升機 =================
   let flUp = false, flDown = false;
@@ -835,12 +920,27 @@ function startGame(myName) {
   function mechPunch() {
     const M = P.mech; if (!M || M.punchT > 0) return;
     M.punchT = 0.5; sfx.whoosh();
-    setTimeout(() => { if (P.mech && monSt && monSt.s !== 'dead' && monDist() < 58) { net.send({ t: 'khit', dmg: 60 }); sfx.boom(); shake = 0.5; hitFx(); } }, 250);
+    if (!monSt || monSt.s === 'dead') return toast('👾 而家冇怪獸，等緊下一隻出嚟');
+    // 近身就衝前：150 米內撳出拳會自動衝埋去怪獸面前
+    const d0 = monDist();
+    if (d0 > 150) return toast(`太遠喇！怪獸喺 ${Math.round(d0)} 米外，行近啲（150 米內）先出拳，或者用 ⚡ 光炮`);
+    if (d0 > 34) { const k = (d0 - 32) / d0; P.pos.x += (arena.mon.pos.x - P.pos.x) * k; P.pos.z += (arena.mon.pos.z - P.pos.z) * k; }
+    P.face = Math.atan2(arena.mon.pos.x - P.pos.x, arena.mon.pos.z - P.pos.z);
+    setTimeout(() => { if (P.mech && monSt && monSt.s !== 'dead' && monDist() < 80) hitKaiju(60); }, 250);
   }
   function mechBeam() {
     const M = P.mech; if (!M || M.beamCd > 0) return;
+    if (!monSt || monSt.s === 'dead') return toast('👾 而家冇怪獸，等緊下一隻出嚟');
+    if (monDist() > 250) return toast(`光炮射程 250 米，怪獸喺 ${Math.round(monDist())} 米外，行近啲先射`);
     M.beamCd = 3; M.beamT = 0.8; sfx.alarm(0.3);
-    if (monSt && monSt.s !== 'dead' && monDist() < 230) setTimeout(() => { if (P.mech) { net.send({ t: 'khit', dmg: 110 }); shake = 0.4; hitFx(); } }, 300);
+    setTimeout(() => { if (P.mech) hitKaiju(110); }, 300);
+  }
+  // 打中：即刻喺自己畫面扣血（伺服器之後會同步返真正血量）+ 彈出傷害數字
+  function hitKaiju(dmg) {
+    net.send({ t: 'khit', dmg }); sfx.boom(); shake = 0.5; hitFx();
+    monSt.hp = Math.max(0, monSt.hp - dmg); arena.setMonster(monSt);
+    const el = document.createElement('div'); el.className = 'dmgPop'; el.textContent = `-${dmg}`;
+    el.style.left = (45 + Math.random() * 10) + '%'; document.body.appendChild(el); setTimeout(() => el.remove(), 1000);
   }
   function hitFx() { const f = $('flash'); f.style.transition = 'none'; f.style.background = 'radial-gradient(rgba(255,255,255,.6),transparent 60%)'; f.style.opacity = 0.7; requestAnimationFrame(() => { f.style.transition = 'opacity .4s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 450); }); }
   $('mkPunch').onclick = () => mechPunch(); $('mkBeam').onclick = () => mechBeam(); $('mkOff').onclick = () => { if (P.mech && performance.now() - P.mech.since > 1500) mechOff(); };
