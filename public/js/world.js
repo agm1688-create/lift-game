@@ -147,6 +147,23 @@ export function buildWorld(scene, api) {
     inter([x, y, z], 1.2, () => '🥇 拎金條', () => { api.gold(); g.visible = false; setTimeout(() => g.visible = true, 30000); }, () => g.visible);
   });
 
+  // ---------- 銀條（散落喺小鎮、機場、豪景花園附近；執完 30 秒後再出）----------
+  const silverMat = new THREE.MeshStandardMaterial({ color: '#e3e8ee', metalness: 0.95, roughness: 0.18, envMapIntensity: 1.4 });
+  const silverBar = () => { const s = new THREE.Group(); const b = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.14), silverMat); s.add(b); const t = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.09), silverMat); t.position.y = 0.07; s.add(t); s.scale.setScalar(1.6); return s; };
+  const silverSpots = [[-6, 0, 2], [15, 0, 2], [-18, 0, -4], [24, 0, -14], [-8, 0, -24], [18, 0, 26], [-35, 0, 14], [40, 0, 10], [-45, 0, -30], [55, 0, -40], [-60, 0, 0], [60, 0, 25],
+    [-120, 0, 10], [-200, 0, -20], [200, 0, -50], [350, 0, -100], [600, 0, -60], [900, 0, -140], [1200, 0, -60], [-60, 0, -180], [100, 0, -200],
+    [-700, 0, 560], [-850, 0, 620], [-560, 0, 600], [-1000, 0, 520], [-420, 0, 700]];
+  silverSpots.forEach(([x, y, z]) => {
+    const g = silverBar(); g.position.set(x, y + 0.35, z); scene.add(g);
+    updaters.push((dt, t) => { g.rotation.y += dt * 1.5; g.position.y = y + 0.35 + Math.sin(t * 2 + z) * 0.08; });
+    inter([x, y, z], 1.2, () => '🥈 拎銀條', () => { api.silver(); g.visible = false; setTimeout(() => g.visible = true, 30000); }, () => g.visible);
+  });
+  [[45, 0, -5], [-50, 0, 40], [130, 0, 60], [-100, 0, -60], [700, 0, -100], [-650, 0, 650]].forEach(([x, y, z]) => {
+    const g = itemMesh('gold'); g.position.set(x, y + 0.35, z); g.scale.setScalar(1.4); scene.add(g);
+    updaters.push((dt, t) => { g.rotation.y += dt * 1.5; });
+    inter([x, y, z], 1.2, () => '🥇 拎金條', () => { api.gold(); g.visible = false; setTimeout(() => g.visible = true, 30000); }, () => g.visible);
+  });
+
   // ---------- 公廁 ----------
   const TZ0 = 16, TZ1 = 22, TX0 = -4, TX1 = 4, TH = 3.2;
   const tileW = std('#fff', { map: T.tileTex(3, 2, '#e6f0f3', '#c0d3d9') });

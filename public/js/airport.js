@@ -9,9 +9,14 @@ import { IM, signMat, sign, plant } from './interiors.js';
 const V3 = THREE.Vector3;
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...extra });
 const A = AIRPORT;
-export const RUNWAY = { x0: 1960, x1: 3040, z0: -80, z1: -35 };
-const PAVED = [RUNWAY, { x0: 1990, x1: 3010, z0: -20, z1: 10 }, { x0: 2080, x1: 2760, z0: 10, z1: 200 }, { x0: 2780, x1: 3020, z0: 10, z1: 190 }];
-export const HELIPADS = [[2470, 150], [2560, 150], [55 - 16, -125 + 4, 80]];
+// 機場模型用舊座標砌，再成個平移去小鎮東面（出生點旁邊嗰塊空地）
+export const DX = -1700, DZ = -200;
+const sh = r => ({ x0: r.x0 + DX, x1: r.x1 + DX, z0: r.z0 + DZ, z1: r.z1 + DZ });
+const RW0 = { x0: 1960, x1: 3040, z0: -80, z1: -35 };
+export const RUNWAY = sh(RW0);
+const PAVED = [RW0, { x0: 1990, x1: 3010, z0: -20, z1: 10 }, { x0: 2080, x1: 2760, z0: 10, z1: 200 }, { x0: 2780, x1: 3020, z0: 10, z1: 190 }].map(sh);
+const HELI_SPOTS = [2470, 2520, 2570, 2620];
+export const HELIPADS = [...HELI_SPOTS.map(x => [x + DX, 60 + DZ]), [55 - 16, -125 + 4, 80]];
 
 // 呢個位置可唔可以升降？
 export function canLand(x, z, heli = false, y = 0) {
@@ -64,32 +69,55 @@ export function buildHeli(color = '#1565c0') {
   g.userData = { rotor, tail, seat: new V3(0, 0.95, 0.4), kind: 'heli' };
   return g;
 }
-function airliner(color) {
-  const g = new THREE.Group(), w = std('#f5f5f5', { metalness: 0.3 }), c = std(color);
-  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); g.add(o); return o; };
-  add(new THREE.CapsuleGeometry(2.4, 34, 6, 14), w, 0, 4.5, 0, Math.PI / 2);
-  add(new THREE.BoxGeometry(36, 0.5, 6), w, 0, 3.8, -1, 0, 0, 0);
-  add(new THREE.BoxGeometry(12, 0.3, 3), w, 0, 5, -17);
-  add(new THREE.BoxGeometry(0.4, 7, 5), c, 0, 8.5, -17.5);
-  add(new THREE.BoxGeometry(4.9, 0.6, 30), c, 0, 4.0, 0);
-  [-7, 7].forEach(x => add(new THREE.CylinderGeometry(1.1, 1.1, 4, 14), std('#b0bec5', { metalness: 0.6 }), x, 2.6, 1, Math.PI / 2));
-  for (let z = -12; z < 14; z += 1.6) [-1, 1].forEach(s => add(new THREE.BoxGeometry(0.05, 0.5, 0.4), std('#263238'), s * 2.4, 5.6, z));
-  [[0, 12], [-2.5, -1], [2.5, -1]].forEach(([x, z]) => add(new THREE.CylinderGeometry(0.5, 0.5, 0.5, 12), std('#222'), x, 0.5, z, 0, 0, Math.PI / 2));
+export function buildJumbo(color = '#c62828') {
+  const g = new THREE.Group(), w = std('#f5f5f5', { metalness: 0.3 }), c = std(color), eng = std('#b0bec5', { metalness: 0.6 }), win = std('#263238');
+  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); o.castShadow = true; g.add(o); return o; };
+  add(new THREE.CapsuleGeometry(3.2, 58, 8, 16), w, 0, 6.5, 0, Math.PI / 2);                          // 機身（約 68 米長）
+  add(new THREE.CapsuleGeometry(2.4, 16, 6, 12), w, 0, 8.6, 18, Math.PI / 2);                         // 上層駝峰
+  add(new THREE.BoxGeometry(6.5, 0.8, 50), c, 0, 5.2, 0);
+  [-1, 1].forEach(s => {
+    const wing = add(new THREE.BoxGeometry(30, 0.7, 9), w, s * 17, 5.5, -2, 0, s * -0.45, 0);
+    [10, 22].forEach(d => add(new THREE.CylinderGeometry(1.4, 1.2, 5.5, 14), eng, s * d, 3.6, 2 - d * 0.42, Math.PI / 2));
+    add(new THREE.BoxGeometry(11, 0.4, 4), w, s * 6, 8, -29, 0, s * -0.4, 0);
+  });
+  add(new THREE.BoxGeometry(0.6, 12, 8), c, 0, 13, -30);
+  for (let z = -24; z < 28; z += 1.8) [-1, 1].forEach(s => add(new THREE.BoxGeometry(0.06, 0.6, 0.5), win, s * 3.2, 7.4, z));
+  add(new THREE.BoxGeometry(3, 0.8, 0.1), win, 0, 9.5, 31.6, -0.6);
+  [[0, 27], [-4, -2], [4, -2], [-2, -2], [2, -2]].forEach(([x, z]) => { add(new THREE.CylinderGeometry(0.15, 0.15, 3, 6), std('#333'), x, 1.7, z); add(new THREE.CylinderGeometry(0.7, 0.7, 0.6, 12), std('#111'), x, 0.7, z, 0, 0, Math.PI / 2); });
+  g.userData = { seat: new V3(0.8, 7.6, 30), kind: 'jumbo' };
   return g;
 }
+export function buildFighter(color = '#607d8b') {
+  const g = new THREE.Group(), c = std(color, { metalness: 0.5, roughness: 0.4 }), dark = std('#263238', { metalness: 0.5 });
+  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); o.castShadow = true; g.add(o); return o; };
+  add(new THREE.CapsuleGeometry(0.9, 12, 6, 12), c, 0, 2.1, 0, Math.PI / 2);
+  add(new THREE.ConeGeometry(0.9, 3.5, 12), c, 0, 2.1, 8.2, Math.PI / 2);
+  add(new THREE.SphereGeometry(0.8, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#ffca28', transparent: true, opacity: 0.6, metalness: 0.6 }), 0, 2.8, 3.5).scale.set(0.9, 0.8, 2.2);
+  const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute([-5.5, 0, -4, 5.5, 0, -4, 0, 0, 5], 3)); wg.setIndex([0, 1, 2, 2, 1, 0]); wg.computeVertexNormals();
+  add(wg, new THREE.MeshStandardMaterial({ color, metalness: 0.5, side: THREE.DoubleSide }), 0, 1.9, -1);
+  [-1, 1].forEach(s => { add(new THREE.BoxGeometry(0.15, 2.4, 2.4), c, s * 1.3, 3.4, -5.6, 0, 0, s * 0.3); add(new THREE.BoxGeometry(2.6, 0.12, 1.6), c, s * 1.9, 2.0, -6.2); });
+  add(new THREE.CylinderGeometry(0.75, 0.6, 1.2, 12), dark, 0, 2.1, -6.9, Math.PI / 2);
+  const flame = add(new THREE.ConeGeometry(0.6, 3, 12), new THREE.MeshBasicMaterial({ color: '#ff9100', transparent: true, opacity: 0.85 }), 0, 2.1, -8.8, -Math.PI / 2);
+  [[0, 5], [-1.6, -1.5], [1.6, -1.5]].forEach(([x, z]) => { add(new THREE.CylinderGeometry(0.08, 0.08, 1.4, 6), dark, x, 0.9, z); add(new THREE.CylinderGeometry(0.35, 0.35, 0.3, 10), std('#111'), x, 0.3, z, 0, 0, Math.PI / 2); });
+  g.userData = { seat: new V3(0, 2.0, 3.4), kind: 'fighter', flame };
+  return g;
+}
+export function buildAircraft(kind, color) { return kind === 'heli' ? buildHeli(color) : kind === 'jumbo' ? buildJumbo(color) : kind === 'fighter' ? buildFighter(color) : buildPlane(color); }
+export const AIR_KINDS = ['plane', 'heli', 'jumbo', 'fighter'];
 
 // ---------- 機場 ----------
 export function buildAirport(scene, api) {
-  const root = new THREE.Group(); scene.add(root);
+  const root = new THREE.Group(); root.position.set(DX, 0, DZ); scene.add(root);
   const cols = [], parts = new Map(), inter = [];
   const B = { cols, add(g, m) { if (!parts.has(m)) parts.set(m, []); parts.get(m).push(g); }, box(x0, y0, z0, x1, y1, z1, m, col = true) { const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); this.add(g, m); if (col) cols.push({ min: [x0, y0, z0], max: [x1, y1, z1] }); } };
   const concrete = std('#9ea3a8'), asphalt = std('#3c3f44'), white = std('#f0f0f0'), yellow = std('#ffd54f'), grass = std('#6fae5a');
   const pl = (x0, z0, x1, z1, y, m) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, y, (z0 + z1) / 2); B.add(g, m); };
-  pl(A.x0, A.z0, A.x1, A.z1, 0.004, grass);
+  const RUNWAY = RW0;
+  pl(A.x0 - DX, A.z0 - DZ, A.x1 - DX, A.z1 - DZ, 0.004, grass);
   pl(RUNWAY.x0, RUNWAY.z0, RUNWAY.x1, RUNWAY.z1, 0.02, asphalt);
   for (let x = RUNWAY.x0 + 60; x < RUNWAY.x1 - 60; x += 30) B.box(x, 0.021, -58, x + 15, 0.03, -57, white, false);
   [RUNWAY.x0 + 8, RUNWAY.x1 - 38].forEach(x => { for (let z = RUNWAY.z0 + 3; z < RUNWAY.z1 - 3; z += 3.5) B.box(x, 0.021, z, x + 30, 0.03, z + 1.8, white, false); });
-  PAVED.slice(1).forEach(r => pl(r.x0, r.z0, r.x1, r.z1, 0.018, concrete));
+  PAVED.slice(1).forEach(r => pl(r.x0 - DX, r.z0 - DZ, r.x1 - DX, r.z1 - DZ, 0.018, concrete));
   for (let x = 2000; x < 3000; x += 20) B.box(x, 0.019, -5.5, x + 10, 0.025, -4.5, yellow, false);
   // 跑道燈
   const lamp = new THREE.MeshBasicMaterial({ color: '#ffe082' });
@@ -161,32 +189,42 @@ export function buildAirport(scene, api) {
   B.box(2100, 0, -100, 2100.3, 6, -99.7, IM.steel); const ws = new THREE.ConeGeometry(0.6, 3, 10, 1, true); ws.rotateZ(Math.PI / 2); ws.translate(2101.5, 5.8, -99.8); B.add(ws, std('#ff6f00', { side: THREE.DoubleSide }));
   for (const [m, list] of parts) { const mesh = new THREE.Mesh(mergeGeometries(list, false), m); mesh.receiveShadow = true; root.add(mesh); }
 
-  // 泊住嘅客機
-  [['#c62828', 2270], ['#1565c0', 2390], ['#2e7d32', 2510]].forEach(([c, x]) => { const p = airliner(c); p.position.set(x, 0, 150); p.rotation.y = Math.PI; root.add(p); cols.push({ min: [x - 3, 0, 130], max: [x + 3, 7, 170] }); });
   const hangarPlane = buildPlane('#ff9800'); hangarPlane.position.set(2840, 0, 125); root.add(hangarPlane);
   const hangarHeli = buildHeli('#c62828'); hangarHeli.position.set(2950, 0, 125); root.add(hangarHeli);
-
-  // 玩家飛機位（撳就有自己一架）
-  const spots = [];
-  [['plane', 2200, 80, '#e53935'], ['plane', 2230, 80, '#fdd835'], ['plane', 2260, 80, '#43a047'], ['heli', 2470, 150, '#1565c0'], ['heli', 2560, 150, '#6a1b9a']].forEach(([kind, x, z, c]) => {
-    const m = kind === 'plane' ? buildPlane(c) : buildHeli(c); m.position.set(x, 0, z); m.rotation.y = kind === 'plane' ? Math.PI : 0; root.add(m);
+  // 玩家機隊（撳就有自己一架）
+  const fleet = [];
+  ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#ff7043', '#8e24aa', '#00acc1', '#f06292', '#6d4c41', '#ffffff'].forEach((c, k) => fleet.push(['plane', 2100 + k * 30, 40, c, Math.PI]));
+  ['#c62828', '#1565c0', '#2e7d32', '#ff8f00'].forEach((c, k) => fleet.push(['jumbo', 2160 + k * 130, 140, c, 0]));
+  ['#607d8b', '#37474f'].forEach((c, k) => fleet.push(['fighter', 2860 + k * 50, 40, c, Math.PI]));
+  HELI_SPOTS.forEach((x, k) => fleet.push(['heli', x, 60, ['#1565c0', '#6a1b9a', '#c62828', '#00897b'][k], 0]));
+  const LABEL = { plane: '✈ 揸小型飛機', jumbo: '🛫 揸巨無霸客機', fighter: '🛩 揸戰鬥機', heli: '🚁 揸直升機' };
+  fleet.forEach(([kind, x, z, c, ry]) => {
+    const m = buildAircraft(kind, c); m.position.set(x, 0, z); m.rotation.y = ry; root.add(m);
     if (kind === 'heli') { const h = new THREE.Mesh(new THREE.CircleGeometry(8, 30), signMat('H', '#2b2f36', '#ffd54f', 'bold 90px sans-serif')); h.rotation.x = -Math.PI / 2; h.position.set(x, 0.03, z); root.add(h); }
-    spots.push({ kind, x, z, color: c, model: m });
-    inter.push({ pos: new V3(x + (kind === 'plane' ? 4 : 3), 0, z), r: 4, label: () => kind === 'plane' ? '✈ 揸小型飛機' : '🚁 揸直升機', act: () => api.startFlight(kind, x, z, m.rotation.y, c) });
+    const off = kind === 'jumbo' ? [10, -20] : kind === 'fighter' ? [6, 0] : [4, 0];
+    inter.push({ pos: new V3(x + off[0] + DX, 0, z + off[1] + DZ), r: kind === 'jumbo' ? 8 : 4, label: () => LABEL[kind], act: () => api.startFlight(kind, x + DX, z + DZ, ry, c) });
   });
-  const sg = new THREE.Mesh(new THREE.PlaneGeometry(26, 3), signMat('✈ 自助租飛機：行埋去撳「揸」', '#0d47a1')); sg.position.set(2330, 4, 60); root.add(sg);
+  const sg = new THREE.Mesh(new THREE.PlaneGeometry(30, 3), signMat('✈ 自助租飛機：行埋去撳「揸」', '#0d47a1')); sg.position.set(2240, 4, 15); root.add(sg);
+  // 碰撞盒都要平移
+  cols.forEach(c => { c.min[0] += DX; c.max[0] += DX; c.min[2] += DZ; c.max[2] += DZ; });
 
   function update(p) {
-    const near = p.x > A.x0 - 1500 && p.x < A.x1 + 1500 && p.z > A.z0 - 1500 && p.z < A.z1 + 1500;
+    const near = p.x > A.x0 - 1600 && p.x < A.x1 + 1600 && p.z > A.z0 - 1600 && p.z < A.z1 + 1600;
     root.visible = near || p.y > 300;
   }
-  return { colliders: cols, interactables: inter, update, spawn: new V3(2400, 0.1, 300) };
+  return { colliders: cols, interactables: inter, update, spawn: new V3(2400 + DX, 0.1, 300 + DZ) };
 }
 
 // ======================================================================
 // 飛行（簡化街機手感）
+const FP = {
+  plane: { max: 75, acc: 9, lift: 27, stall: 22, turn: 0.9, pitch: 0.6, alt: 4000, crashV: 9 },
+  jumbo: { max: 115, acc: 4.5, lift: 60, stall: 50, turn: 0.45, pitch: 0.32, alt: 12000, crashV: 7 },
+  fighter: { max: 290, acc: 32, lift: 62, stall: 50, turn: 1.7, pitch: 0.95, alt: 15000, crashV: 9 },
+};
 export class Flight {
   constructor(kind, x, z, yaw) {
+    this.fp = FP[kind] || FP.plane;
     this.kind = kind; this.pos = new V3(x, 0, z); this.yaw = yaw; this.pitch = 0; this.roll = 0; this.speed = 0; this.vy = 0; this.throttle = 0;
     this.vel = new V3(); this.ground = true; this.spin = 0; this.groundY = 0;
   }
@@ -194,24 +232,25 @@ export class Flight {
   step(dt, inp, hit) {
     const p = this.pos;
     let ev = null;
-    if (this.kind === 'plane') {
+    const fp = this.fp;
+    if (this.kind !== 'heli') {
       this.throttle = Math.max(0, Math.min(1, this.throttle + ((inp.up ? 1 : 0) - (inp.down ? 1 : 0)) * 0.6 * dt));
-      const target = this.throttle * 75;
-      this.speed += Math.max(-6 * dt, Math.min(9 * dt, target - this.speed));
+      const target = this.throttle * fp.max;
+      this.speed += Math.max(-Math.max(6, fp.acc * 0.6) * dt, Math.min(fp.acc * dt, target - this.speed));
       if (this.ground) {
         this.speed *= this.throttle < 0.05 ? 1 - 0.8 * dt : 1;
         this.yaw -= inp.x * 0.8 * dt * Math.min(1, this.speed / 6);
-        const pitchT = this.speed > 27 ? Math.max(0, -inp.y) * 0.35 : 0;
+        const pitchT = this.speed > fp.lift ? Math.max(0, -inp.y) * Math.min(0.35, fp.pitch) : 0;
         this.pitch += (pitchT - this.pitch) * Math.min(1, dt * 3); this.roll *= 0.8;
       } else {
-        const stall = this.speed < 22;
-        const pitchT = stall ? -0.35 : -inp.y * 0.6;
+        const stall = this.speed < fp.stall;
+        const pitchT = stall ? -0.35 : -inp.y * fp.pitch;
         this.pitch += (pitchT - this.pitch) * Math.min(1, dt * 1.8);
         this.roll += (-inp.x * 0.75 - this.roll) * Math.min(1, dt * 2.5);
-        this.yaw += this.roll * 0.9 * dt * Math.min(1, this.speed / 30);
+        this.yaw += this.roll * fp.turn * dt * Math.min(1, this.speed / 30);
       }
       const f = new V3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-      this.vel.set(f.x * this.speed * Math.cos(this.pitch), this.speed * Math.sin(this.pitch) - (this.speed < 22 && !this.ground ? 8 : 0), f.z * this.speed * Math.cos(this.pitch));
+      this.vel.set(f.x * this.speed * Math.cos(this.pitch), this.speed * Math.sin(this.pitch) - (this.speed < fp.stall && !this.ground ? 8 : 0), f.z * this.speed * Math.cos(this.pitch));
       this.spin += (5 + this.throttle * 40) * dt;
     } else {
       // 直升機：搖桿 = 前後左右（跟鏡頭）、↑↓ = 升降
@@ -229,7 +268,7 @@ export class Flight {
     const next = p.clone().addScaledVector(this.vel, dt);
     // 撞嘢
     if (hit(next, this.ground)) {
-      if (this.kind === 'plane' && (!this.ground || this.speed > 12)) return 'crash';
+      if (this.kind !== 'heli' && (!this.ground || this.speed > 12)) return 'crash';
       this.vel.set(0, Math.max(0, this.vel.y), 0); this.speed = 0; return 'blocked';
     }
     // 地面 / 停機坪
@@ -238,14 +277,14 @@ export class Flight {
       if (!this.ground) {
         const ok = canLand(next.x, next.z, this.kind === 'heli', floor);
         if (!ok) {
-          if (this.kind === 'plane') return 'crash';
+          if (this.kind !== 'heli') return 'crash';
           next.y = floor + 2.5; this.vel.y = 0; ev = 'noland';
-        } else if (this.kind === 'plane' && (this.vel.y < -9 || Math.abs(this.roll) > 0.5)) return 'crash';
+        } else if (this.kind !== 'heli' && (this.vel.y < -fp.crashV || Math.abs(this.roll) > 0.5)) return 'crash';
         else { this.ground = true; next.y = floor; this.vel.y = 0; this.pitch = 0; this.roll = 0; }
       } else next.y = floor;
-      if (this.ground && this.kind === 'plane' && this.speed > 0.5 && !canLand(next.x, next.z, false, floor)) { this.speed = 0; this.throttle = 0; return 'offroad'; }
+      if (this.ground && this.kind !== 'heli' && this.speed > 0.5 && !canLand(next.x, next.z, false, floor)) { this.speed = 0; this.throttle = 0; return 'offroad'; }
     } else if (next.y > floor + 0.3) this.ground = false;
-    if (next.y > 4000) { next.y = 4000; this.vel.y = Math.min(0, this.vel.y); }
+    const altMax = this.kind === 'heli' ? 4000 : fp.alt; if (next.y > altMax) { next.y = altMax; this.vel.y = Math.min(0, this.vel.y); }
     p.copy(next);
     return ev;
   }

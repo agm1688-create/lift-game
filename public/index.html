@@ -89,12 +89,21 @@
   #musicBox { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:64px; background:var(--bg); padding:8px; border-radius:12px; display:flex; flex-direction:column; gap:6px; z-index:12; }
   #musicBox button { padding:8px 14px; border-radius:10px; background:#2d3a5a; font-size:14px; text-align:left; }
   #musicBox button.on { background:#1b8a3a; }
-  #flightPanel { position:absolute; left:50%; transform:translateX(-50%); bottom:96px; background:var(--bg); padding:6px 10px; border-radius:14px; text-align:center; }
-  #flInfo { font-size:13px; margin-bottom:4px; white-space:nowrap; }
-  .flRow { display:flex; gap:8px; justify-content:center; }
-  .flRow button, #mechPanel button { padding:10px 14px; border-radius:12px; background:#2d3a5a; font-size:15px; font-weight:bold; touch-action:none; user-select:none; }
+  #flightPanel { position:absolute; inset:0; pointer-events:none; }
+  #flightPanel > * { pointer-events:auto; }
+  #flInfo { position:absolute; left:50%; transform:translateX(-50%); bottom:16px; background:var(--bg); padding:6px 12px; border-radius:12px; font-size:13px; white-space:nowrap; }
+  #flUp, #flDown { position:absolute; right:calc(24px + env(safe-area-inset-right)); width:92px; height:92px; border-radius:50%; font-size:34px; font-weight:bold; color:#fff; border:3px solid rgba(255,255,255,.8); display:flex; flex-direction:column; align-items:center; justify-content:center; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #flUp small, #flDown small { font-size:11px; }
+  #flUp { bottom:128px; background:rgba(27,138,58,.85); } #flDown { bottom:24px; background:rgba(178,106,0,.85); }
+  #flUp:active, #flDown:active { filter:brightness(1.3); }
+  #flExit { position:absolute; right:calc(130px + env(safe-area-inset-right)); bottom:40px; padding:12px 16px; border-radius:24px; background:rgba(255,200,61,.9); color:#2a1a00; font-weight:bold; font-size:15px; }
+  #mechPanel button { padding:10px 14px; border-radius:12px; background:#2d3a5a; font-size:15px; font-weight:bold; touch-action:none; user-select:none; }
   #flUp { background:#1b8a3a; } #flDown { background:#b26a00; }
-  #mechPanel { position:absolute; right:calc(120px + env(safe-area-inset-right)); bottom:30px; display:flex; flex-direction:column; gap:8px; }
+  #mechPanel { position:absolute; right:calc(24px + env(safe-area-inset-right)); bottom:118px; display:flex; flex-direction:column; gap:8px; }
+  .mcard { display:flex; flex-direction:column; align-items:center; gap:4px; width:150px; padding:10px; border-radius:14px; background:#222c42; border:2px solid #444; }
+  .mcard:active { border-color:var(--gold); }
+  .mcard .sw { width:70px; height:70px; border-radius:12px; }
+  .mcard small { font-size:11px; opacity:.8; line-height:1.3; }
   #mkPunch { background:#c62828 !important; } #mkBeam { background:#1565c0 !important; }
   #fightHud { position:absolute; left:50%; transform:translateX(-50%); top:8px; width:min(420px,60vw); background:var(--bg); padding:6px 10px; border-radius:12px; font-size:13px; pointer-events:none; }
   #fightHud .bar { height:10px; background:#333; border-radius:6px; overflow:hidden; margin-top:2px; }
@@ -207,7 +216,8 @@
     <div id="floorBig">1F</div>
     <div>高度 <b id="altTxt">0 m</b></div>
     <div id="layerTxt">大廈樓層</div>
-    <div>🥇 金條 <b id="goldTxt">0</b>　👥 在線 <b id="onlineTxt">1</b></div>
+    <div>🥇 金條 <b id="goldTxt">0</b>　🥈 銀條 <b id="silverTxt">0</b></div>
+    <div>👥 在線 <b id="onlineTxt">1</b></div>
     <div>💵 現金 <b id="cashTxt">HK$0</b></div>
   </div>
   <div id="wifi" class="hidden">📶 Wi-Fi 已連接</div>
@@ -244,7 +254,9 @@
   </div>
   <div id="flightPanel" class="hidden">
     <div id="flInfo">✈</div>
-    <div class="flRow"><button id="flUp">⬆ 油門 / 升</button><button id="flDown">⬇ 減速 / 降</button><button id="flExit">🚪 落機</button></div>
+    <button id="flUp">⬆<small>升高 / 加油</small></button>
+    <button id="flDown">⬇<small>降低 / 減速</small></button>
+    <button id="flExit">🚪 落機</button>
   </div>
   <div id="mechPanel" class="hidden"><button id="mkPunch">👊 出拳</button><button id="mkBeam">⚡ 光炮</button><button id="mkOff">🔙 變返人</button></div>
   <div id="fightHud" class="hidden">
@@ -274,6 +286,13 @@
   </div>
 </div></div>
 
+<!-- 揀機甲 -->
+<div id="mechModal" class="modal hidden"><div class="box">
+  <h3>🤖 揀一部機甲變身</h3>
+  <div id="mechCards" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"></div>
+  <button class="cancel" id="mechClose">取消</button>
+</div></div>
+
 <!-- 大地圖 -->
 <div id="mapModal" class="modal hidden"><div class="box" style="padding:10px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="color:var(--gold)">🗺 大地圖（10 × 10 公里）</b><span id="mapInfo" style="font-size:12px;opacity:.8"></span><button class="x" id="mapClose">✕</button></div>
@@ -299,6 +318,7 @@
     <div class="bcard"><div>身上現金</div><b id="bCash">HK$0</b></div>
     <div class="bcard"><div>銀行存款</div><b id="bSave">HK$0</b></div>
     <div class="bcard"><div>身上金條</div><b id="bGold">0</b></div>
+    <div class="bcard"><div>身上銀條</div><b id="bSilver">0</b></div>
     <div class="bcard"><div>保險箱金條</div><b id="bVault">0</b></div>
   </div>
   <div id="goldPrice"></div>
@@ -309,6 +329,10 @@
   <div class="brow"><span>💰 賣金</span>
     <button data-b="sell1">賣 1 條</button><button data-b="sellAll">全部賣出</button>
   </div>
+  <div class="brow"><span>🥈 銀條</span>
+    <button data-b="sellS1">賣 1 條</button><button data-b="sellSAll">全部賣出</button>
+  </div>
+  <div id="silverPrice" style="padding:0 14px;font-size:13px;opacity:.85"></div>
   <div class="brow"><span>💵 現金</span>
     <button data-b="dep100">存 $100</button><button data-b="dep1000">存 $1000</button><button data-b="depAll">全部存</button>
     <button data-b="wd100">提 $100</button><button data-b="wd1000">提 $1000</button><button data-b="wdAll">全部提</button>

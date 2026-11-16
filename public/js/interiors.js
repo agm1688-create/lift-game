@@ -86,11 +86,11 @@ export function pickKind(w, d, res, R) {
   if (w * d > 1500) return R() < 0.7 ? 'office' : 'market';
   return ['shop', 'cafe', 'gym', 'clinic', 'bank', 'books', 'diner', 'office'][Math.floor(R() * 8)];
 }
-export function storeInterior(B, I, kind, R) {
+export function storeInterior(B, I, kind, R, signText) {
   const { ix0, iz0, ix1, iz1, xm, gf } = I, W = ix1 - ix0, D = iz1 - iz0;
   plane(B, ix0, iz0, ix1, iz1, 0.02, kind === 'gym' ? IM.rubber : kind === 'books' || kind === 'cafe' ? IM.wood : IM.marble);
   lights(B, ix0, iz0, ix1, iz1, gf - 0.02, W > 30 ? 8 : 4);
-  const [txt, col] = KIND_SIGN[kind];
+  const [txt0, col] = KIND_SIGN[kind], txt = signText || txt0;
   sign(B, xm, 3.9, iz1 + 0.42, Math.min(W - 1, 8), 1.2, signMat(txt, col));                  // 門口招牌
   sign(B, xm, 2.6, iz0 + 0.02, Math.min(W - 2, 6), 0.9, signMat(txt, col), '+z');           // 入面背牆
   plant(B, ix0 + 0.6, iz1 - 0.8); plant(B, ix1 - 0.6, iz1 - 0.8);
