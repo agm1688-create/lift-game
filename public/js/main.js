@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildWorld, LIFT_DEF } from './world.js';
 import { buildLifts, isMoving } from './lifts.js';
-import { buildAvatar, animateAvatar, buildShiba, animateShiba, itemMesh, SKINS, SHIRTS, HATS } from './avatar.js';
+import { buildAvatar, animateAvatar, buildShiba, animateShiba, itemMesh, SKINS, SHIRTS, HATS, HAIRS, PANTS } from './avatar.js';
 import { Net, Voice } from './net.js';
 import { initAudio, sfx } from './audio.js';
 import { altOfFloor, layerName, fmtAlt, floorLabel, MAX_FLOOR } from './alt.js';
@@ -13,6 +13,8 @@ import { buildHotel, roomDoor, ROOM_TYPES } from './hotel.js';
 import { buildPark } from './park.js';
 import { playMusic, currentMusic, TRACKS } from './music.js';
 import { buildBike, bikePose, buildCampers } from './vehicles.js';
+import { buildAirport, Flight, buildPlane, buildHeli } from './airport.js';
+import { buildArena, buildMech, animateMech, inStage, KAIJU } from './arena.js';
 import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD } from './city.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
@@ -53,6 +55,8 @@ optRow($('optGender'), [{ v: 'm', n: '👦 男' }, { v: 'f', n: '👧 女' }], '
 optRow($('optSkin'), SKINS.map(v => ({ v })), 'skin', (b, it) => { b.className = 'sw'; b.style.background = it.v; });
 optRow($('optHat'), HATS.map(h => ({ v: h.id, n: h.name })), 'hat', (b, it) => { b.className = 'opt'; b.textContent = (it.v === 'gold' || it.v === 'crown' ? '👑 ' : '') + it.n; });
 optRow($('optShirt'), SHIRTS.map(v => ({ v })), 'shirt', (b, it) => { b.className = 'sw'; b.style.background = it.v; });
+optRow($('optHair'), HAIRS.map(v => ({ v })), 'hair', (b, it) => { b.className = 'sw'; b.style.background = it.v; });
+optRow($('optPants'), PANTS.map(v => ({ v })), 'pants', (b, it) => { b.className = 'sw'; b.style.background = it.v; });
 rebuildPreview();
 
 $('go').onclick = () => {
@@ -79,7 +83,7 @@ function startGame(myName) {
 
   // ---------- 玩家狀態 ----------
   const SPAWN = new V3(0, 0, 8);
-  const P = { pos: SPAWN.clone(), vy: 0, face: Math.PI, grounded: true, ride: -1, rideObj: null, seat: null, bike: false, camper: -1, lp: new V3(), scale: 1, held: null, inv: new Set(), gold: 0, dog: false, fallFrom: 0, spraying: false, anim: 0, wifi: false };
+  const P = { pos: SPAWN.clone(), vy: 0, face: Math.PI, grounded: true, ride: -1, rideObj: null, seat: null, flight: null, mech: null, bike: false, camper: -1, lp: new V3(), scale: 1, held: null, inv: new Set(), gold: 0, dog: false, fallFrom: 0, spraying: false, anim: 0, wifi: false };
   let camYaw = 0, camPitch = 0.32, camDist = 6, firstPerson = false;
   const toast = (msg, ms = 2200) => { const t = $('toast'); t.textContent = msg; t.style.opacity = 1; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.opacity = 0, ms); };
 
@@ -112,6 +116,8 @@ function startGame(myName) {
   api.sleep = () => doSleep();
   api.boardRide = i => boardRide(i);
   api.enterCamper = k => enterCamper(k);
+  api.startFlight = (kind, x, z, yaw, color) => startFlight(kind, x, z, yaw, color);
+  api.toMech = () => toMech();
   const world = buildWorld(scene, api);
   const lifts = buildLifts(scene, api);
   const shops = buildShops(scene, api, CATALOG.SHOPS);
@@ -119,9 +125,11 @@ function startGame(myName) {
   const hotel = buildHotel(scene, api);
   const park = buildPark(scene, api);
   const campers = buildCampers(scene, api);
+  const airport = buildAirport(scene, api);
+  const arena = buildArena(scene, api);
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
   const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
@@ -418,7 +426,7 @@ function startGame(myName) {
   cv.addEventListener('wheel', e => { camDist = Math.min(40, Math.max(1.5, camDist * (1 + Math.sign(e.deltaY) * 0.1))); $('zoomRange').value = camDist; e.preventDefault(); }, { passive: false });
   $('jump').addEventListener('pointerdown', e => { jump(); e.preventDefault(); });
   $('act').addEventListener('pointerdown', e => { doAct(); e.preventDefault(); });
-  function jump() { if (P.seat) return leaveRide(); if (P.grounded) { P.vy = 8; P.grounded = false; P.ride = -1; P.rideObj = null; } }
+  function jump() { if (P.flight) return; if (P.seat) return leaveRide(); if (P.grounded) { P.vy = P.mech ? 16 : 8; P.grounded = false; P.ride = -1; P.rideObj = null; } }
 
   // ---------- 互動 ----------
   let curInter = null;
@@ -434,7 +442,9 @@ function startGame(myName) {
   }
   function useLabel() { return { ext: '🧯 噴滅火筒', phone: '📱 開手機', router: P.wifi ? '📶 熄 Wi-Fi' : '📶 開 Wi-Fi' }[P.held]; }
   function doAct() {
+    if (P.flight) return exitFlight();
     if (P.seat) return leaveRide();
+    if (P.mech && !curInter) return mechPunch();
     if (curInter) { curInter.act(); return; }
     if (P.held === 'ext') { P.spraying = true; clearTimeout(doAct._s); doAct._s = setTimeout(() => P.spraying = false, 1200); sfx.spray(); }
     else if (P.held === 'phone') openPhone();
@@ -536,17 +546,17 @@ function startGame(myName) {
         break;
       case 'join': addRemote(m); toast(`👋 ${m.name} 入咗遊戲`); break;
       case 'leave': { const r = remotes.get(m.id); if (r) toast(`${r.name} 走咗`); removeRemote(m.id); break; }
-      case 'snap': for (const id in m.p) { const r = remotes.get(+id); if (r) r.st = m.p[id]; } break;
+      case 'snap': for (const id in m.p) { const r = remotes.get(+id); if (r) r.st = m.p[id]; } if (m.m) { arena.setMonster(m.m); monSt = m.m; } break;
       case 'lifts': m.lifts.forEach((s, i) => i < 2 ? lifts.lifts[i].state = s : hotel.setState(i - 2, s)); break;
       case 'world': setToiletLight(m.world.toiletLight); break;
-      case 'ev': if (m.kind === 'boom') doBoom(m.lift); else if (m.kind === 'alarm') doAlarm(); break;
+      case 'ev': if (m.kind === 'boom') doBoom(m.lift); else if (m.kind === 'alarm') doAlarm(); else if (m.kind && m.kind[0] === 'k') kaijuEvent(m); break;
       case 'rtc': voice.onSignal(m.from, m.data); break;
     }
   }
   net.send({ t: 'hello', name: myName, look });
   setInterval(() => {
     const L = P.ride >= 0 ? lifts.lifts[P.ride] : null;
-    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.dog ? 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0, bk: bikeOn ? 1 : 0, cp: P.camper, lp: P.camper >= 0 ? [+P.lp.x.toFixed(2), +P.lp.y.toFixed(2), +P.lp.z.toFixed(2)] : 0 } });
+    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.dog ? 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0, bk: bikeOn ? 1 : 0, fl: P.flight ? [P.flight.kind === 'heli' ? 1 : 0, +P.flight.yaw.toFixed(2), +P.flight.pitch.toFixed(2), +P.flight.roll.toFixed(2), P.flight.color] : 0, mk: P.mech ? 1 : 0, ma: P.mech ? (P.mech.punchT > 0 ? 1 : P.mech.beamT > 0 ? 2 : 0) : 0, cp: P.camper, lp: P.camper >= 0 ? [+P.lp.x.toFixed(2), +P.lp.y.toFixed(2), +P.lp.z.toFixed(2)] : 0 } });
   }, 100);
 
   function dogFollow(dog, owner, face, dt) {
@@ -564,7 +574,7 @@ function startGame(myName) {
   function updateHUD(inCar) {
     const a = P.pos.y;
     const inHotel = hotel.inside(P.pos);
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.camper >= 0 ? campers.list[P.camper].name : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? (P.flight.kind === 'plane' ? '✈ 小型飛機' : '🚁 直升機') : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.camper >= 0 ? campers.list[P.camper].name : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
@@ -673,7 +683,7 @@ function startGame(myName) {
   let bikeOn = false, bikeLean = 0, bikeSpin = 0;
   function isIndoors() {
     const p = P.pos, tb = world.toiletBounds;
-    if (P.seat || P.camper >= 0 || p.y < -1) return true;
+    if (P.seat || P.flight || P.mech || P.camper >= 0 || p.y < -1) return true;
     if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p)) return true;
     if (p.x > tb.x0 && p.x < tb.x1 && p.z > tb.z0 && p.z < tb.z1 && p.y < tb.y1) return true;
     if (p.z > 36 && p.z < 48 && p.x > -46 && p.x < 56.5 && p.y < 4.5) return true;   // 商店街
@@ -710,6 +720,7 @@ function startGame(myName) {
     g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#111';
     g.fillText('🏙 小鎮（柏熙酒店・遊樂場）', w2m(0, 0)[0], w2m(0, -320)[1]);
     LANDMARKS.forEach(l => { const [x, y] = w2m(l.i * CHUNK, l.j * CHUNK); g.fillText(l.name, x, y + 4); });
+    g.fillText('✈ 國際機場', w2m(2500, 0)[0], w2m(0, -100)[1]); g.fillText('⚔ 怪獸決戰場', w2m(-1700, 0)[0], w2m(0, -100)[1]);
     g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(8, c.height - 26, 120, 18); g.fillStyle = '#fff'; g.font = '11px sans-serif'; g.textAlign = 'left';
     g.fillRect(14, c.height - 14, 1000 * MS, 3); g.fillText('1 公里', 14 + 1000 * MS + 6, c.height - 11);
     return c;
@@ -740,12 +751,121 @@ function startGame(myName) {
       const rx = Math.round((x + 100) / CHUNK) * CHUNK - 100, rz = Math.round((z + 100) / CHUNK) * CHUNK - 100;
       if (Math.abs(x - rx) < Math.abs(z - rz)) x = rx; else z = rz;
     }
-    if (P.seat) leaveRide();
+    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff();
     P.camper = -1; api.teleport(x, 0.1, z); city.loadAll(P.pos); closeMap();
     sfx.whoosh(); toast(`✨ 傳送咗去 ${inTownXZ ? '小鎮' : DISTRICT_NAME[district(Math.round(x / CHUNK), Math.round(z / CHUNK))] || '野外'}`);
   });
 
-  if (location.search.includes('debug')) window.__g = { P, park, hotel, campers, city, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  // ================= 飛機 / 直升機 =================
+  let flUp = false, flDown = false;
+  const holdBtn = (id, on) => { const b = $(id); const set = v => e => { on(v); e.preventDefault(); }; b.addEventListener('pointerdown', set(true)); ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, set(false))); };
+  holdBtn('flUp', v => flUp = v); holdBtn('flDown', v => flDown = v);
+  $('flExit').onclick = () => exitFlight();
+  function startFlight(kind, x, z, yaw, color) {
+    if (P.seat) leaveRide(); if (P.mech) mechOff(); P.camper = -1;
+    if (P.held) setHeld(P.held);
+    const F = new Flight(kind, x, z, yaw); F.color = color;
+    F.model = kind === 'plane' ? buildPlane(color) : buildHeli(color); scene.add(F.model);
+    F.seat = new THREE.Object3D(); F.seat.position.copy(F.model.userData.seat); F.model.add(F.seat);
+    P.flight = F; firstPerson = false; $('btnFP').classList.remove('on'); camPitch = 0.2; camYaw = yaw + Math.PI;
+    $('flightPanel').classList.remove('hidden'); sfx.whoosh();
+    toast(kind === 'plane' ? '✈ 撳住「⬆」加油門，速度夠（100 km/h）再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降' : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n只可以喺公路、機場或者停機坪降落', 6000);
+  }
+  function endFlight() { const F = P.flight; if (!F) return; scene.remove(F.model); P.flight = null; $('flightPanel').classList.add('hidden'); me.rotation.set(0, P.face, 0); me.userData.body.position.y = 0; }
+  function exitFlight() {
+    const F = P.flight; if (!F) return;
+    if (!(F.ground && F.speed < 3)) return toast('要停喺地面先落得機');
+    const side = new V3(Math.cos(F.yaw), 0, -Math.sin(F.yaw));
+    const p = F.pos.clone().addScaledVector(side, F.kind === 'plane' ? 6.5 : 3.5);
+    endFlight(); api.teleport(p.x, p.y + 0.1, p.z); sfx.door(); toast('🚶 落咗機');
+  }
+  function crashFlight() {
+    endFlight();
+    sfx.boom(); shake = 1.2; const f = $('flash'); f.style.transition = 'none'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transition = 'opacity 1.5s'; f.style.opacity = 0; });
+    api.teleport(airport.spawn.x, 0.1, airport.spawn.z); city.loadAll(P.pos);
+    toast('💥 墜機！（純屬遊戲）你返咗去機場，可以再租過架', 4000);
+  }
+  function flightHit(p, ground) {
+    for (const c of nearCols(p.x, p.z, 8, false)) {
+      if (c.max[1] < 0.6) continue;
+      const r = 3.2;
+      if (p.x > c.min[0] - r && p.x < c.max[0] + r && p.z > c.min[2] - r && p.z < c.max[2] + r && p.y + 2.5 > c.min[1] && p.y + 0.4 < c.max[1]) return true;
+    }
+    return false;
+  }
+
+  // ================= 機甲 + 怪獸 =================
+  const myMech = buildMech(); myMech.visible = false; scene.add(myMech);
+  let monSt = null;
+  function toMech() {
+    if (P.held) setHeld(P.held); P.bike = false; $('btnBike').classList.remove('on');
+    P.mech = { hp: 300, punchT: 0, beamT: 0, beamCd: 0 };
+    api.teleport(arena.gate.x, 0.1, arena.gate.z); P.face = -Math.PI / 2; camYaw = Math.PI / 2; camPitch = 0.25; firstPerson = false; $('btnFP').classList.remove('on');
+    $('mechPanel').classList.remove('hidden'); $('fightHud').classList.remove('hidden');
+    sfx.whoosh(); shake = 0.6; toast('🤖 變身完成！搵怪獸打：👊 出拳（近身）、⚡ 光炮（遠距離）\n行出東面大閘就會變返人', 5000);
+  }
+  function mechOff(msg) {
+    if (!P.mech) return; P.mech = null; myMech.visible = false; arena.fireBeam(null, null, false);
+    $('mechPanel').classList.add('hidden'); $('fightHud').classList.add('hidden');
+    api.teleport(arena.base.x, 0.1, arena.base.z); toast(msg || '🙂 變返人');
+  }
+  function monDist() { return monSt ? Math.hypot(arena.mon.pos.x - P.pos.x, arena.mon.pos.z - P.pos.z) : 1e9; }
+  function mechPunch() {
+    const M = P.mech; if (!M || M.punchT > 0) return;
+    M.punchT = 0.5; sfx.whoosh();
+    setTimeout(() => { if (P.mech && monSt && monSt.s !== 'dead' && monDist() < 58) { net.send({ t: 'khit', dmg: 60 }); sfx.boom(); shake = 0.5; hitFx(); } }, 250);
+  }
+  function mechBeam() {
+    const M = P.mech; if (!M || M.beamCd > 0) return;
+    M.beamCd = 3; M.beamT = 0.8; sfx.alarm(0.3);
+    if (monSt && monSt.s !== 'dead' && monDist() < 230) setTimeout(() => { if (P.mech) { net.send({ t: 'khit', dmg: 110 }); shake = 0.4; hitFx(); } }, 300);
+  }
+  function hitFx() { const f = $('flash'); f.style.transition = 'none'; f.style.background = 'radial-gradient(rgba(255,255,255,.6),transparent 60%)'; f.style.opacity = 0.7; requestAnimationFrame(() => { f.style.transition = 'opacity .4s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 450); }); }
+  $('mkPunch').onclick = () => mechPunch(); $('mkBeam').onclick = () => mechBeam(); $('mkOff').onclick = () => mechOff();
+  addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.code === 'KeyF') mechPunch(); if (e.code === 'KeyR') mechBeam(); });
+  function mechUpdate(dt, moving) {
+    const M = P.mech;
+    if (!inStage(P.pos)) return mechOff('🙂 行出咗決戰場，變返人');
+    M.punchT -= dt; M.beamT -= dt; M.beamCd -= dt;
+    if (monSt && monSt.s !== 'dead') { const dx = P.pos.x - arena.mon.pos.x, dz = P.pos.z - arena.mon.pos.z, d = Math.hypot(dx, dz); if (d < 28 && d > 0.01) { P.pos.x += dx / d * (28 - d); P.pos.z += dz / d * (28 - d); } }
+    myMech.position.copy(P.pos); myMech.rotation.set(0, P.face, 0);
+    animateMech(myMech, moving, dt, Math.max(0, M.punchT), Math.max(0, M.beamT));
+    if (M.beamT > 0 && monSt && monSt.s !== 'dead') { const from = P.pos.clone().add(new V3(Math.sin(P.face) * 3, 19, Math.cos(P.face) * 3)); arena.fireBeam(from, arena.mon.pos.clone().add(new V3(0, 25, 0)), true); P.face = Math.atan2(arena.mon.pos.x - P.pos.x, arena.mon.pos.z - P.pos.z); }
+    else arena.fireBeam(null, null, false);
+    $('mkBeam').textContent = M.beamCd > 0 ? `⚡ ${Math.ceil(M.beamCd)}` : '⚡ 光炮';
+    if (monSt) { $('khName').textContent = `👾 ${KAIJU[monSt.ty].name}${monSt.s === 'dead' ? '（已打低！等緊下一隻）' : ''}`; $('khBar').style.width = (100 * monSt.hp / monSt.mx) + '%'; }
+    $('myBar').style.width = Math.max(0, M.hp / 3) + '%';
+  }
+  function monTargetPos() { if (!monSt || !monSt.tg) return null; if (monSt.tg === net.id) return P.pos; const r = remotes.get(monSt.tg); return r ? r.pos : null; }
+  function kaijuEvent(m) {
+    if (m.kind === 'kAtk' && m.to === net.id && P.mech) {
+      setTimeout(() => {
+        if (!P.mech) return; const range = m.a === 'swipe' ? 75 : 240;
+        if (monDist() > range) return;
+        P.mech.hp -= m.dmg; shake = 1; sfx.boom();
+        const f = $('flash'); f.style.transition = 'none'; f.style.background = 'rgba(255,0,0,.45)'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transition = 'opacity .6s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 650); });
+        toast(m.a === 'swipe' ? `💢 俾怪獸掃中！-${m.dmg}` : `🔥 俾怪獸光線射中！-${m.dmg}`, 1200);
+        if (P.mech.hp <= 0) mechOff('💥 機甲俾怪獸打爆咗！（純屬遊戲）再入基地變身過啦');
+      }, m.a === 'swipe' ? 800 : 1200);
+    }
+    if (m.kind === 'kDead' && inStage(P.pos)) { toast(`🎉 ${m.by} 打低咗 ${KAIJU[m.ty].name}！12 秒後會有新怪獸`, 4000); sfx.pickup(); }
+    if (m.kind === 'kSpawn' && inStage(P.pos)) { toast(`⚠️ 新怪獸出現：${KAIJU[m.ty].name}！`, 3000); sfx.alarm(1); }
+  }
+  function remoteVehicles(r, s, dt) {
+    if (s.fl) {
+      const kind = s.fl[0] ? 'heli' : 'plane';
+      if (!r.plane || r.plane.userData.kind !== kind) { if (r.plane) scene.remove(r.plane); r.plane = kind === 'plane' ? buildPlane(s.fl[4] || '#e53935') : buildHeli(s.fl[4] || '#1565c0'); const so = new THREE.Object3D(); so.position.copy(r.plane.userData.seat); r.plane.add(so); r.plane.userData.seatObj = so; scene.add(r.plane); }
+      r.plane.visible = true; r.plane.position.copy(r.pos); r.plane.rotation.set(-s.fl[2], s.fl[1], -s.fl[3], 'YXZ');
+      if (r.plane.userData.prop) r.plane.userData.prop.rotation.z += dt * 30; if (r.plane.userData.rotor) r.plane.userData.rotor.rotation.y += dt * 25;
+    } else if (r.plane) r.plane.visible = false;
+    if (s.mk) {
+      if (!r.mech) { r.mech = buildMech(); scene.add(r.mech); }
+      r.mech.visible = true; r.mech.position.copy(r.pos); r.mech.rotation.set(0, r.face, 0); animateMech(r.mech, s.a === 1, dt, s.ma === 1 ? 0.25 : 0, s.ma === 2 ? 0.5 : 0);
+      r.av.visible = false;
+    } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
+  }
+
+  if (location.search.includes('debug')) window.__g = { P, park, hotel, campers, city, airport, arena, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
@@ -768,11 +888,27 @@ function startGame(myName) {
     campers.update(T);
     city.update(P.pos);
     bikeOn = P.bike && !isIndoors();
-    const speed = (bikeOn ? 22 : 7.5) * (0.7 + 0.3 * P.scale);
+    const speed = P.mech ? 16 : (bikeOn ? 22 : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     let turn = 0;
     if (mv.lengthSq() > 0.01) { const tf = Math.atan2(mv.x, mv.z); let df = tf - P.face; df = Math.atan2(Math.sin(df), Math.cos(df)); turn = df; P.face += df * Math.min(1, dt * (bikeOn ? 7 : 14)); }
-    if (P.seat) {
+    airport.update(P.pos);
+    if (P.flight) {
+      // 揸緊飛機 / 直升機
+      const F = P.flight;
+      const ev = F.step(dt, { x: ix, y: iy, up: keys.Space || flUp, down: keys.KeyC || keys.ShiftLeft || flDown, camYaw }, flightHit);
+      if (ev === 'crash') crashFlight();
+      else if (ev && ev !== P.flight._lastEv) { if (ev === 'offroad') toast('🛑 飛機只可以喺公路或者機場升降 / 滑行'); else if (ev === 'noland') toast('🚁 呢度唔可以降落：要喺公路、機場或者停機坪'); }
+      if (P.flight) {
+        P.flight._lastEv = ev;
+        const m = F.model; m.position.copy(F.pos); m.rotation.set(-F.pitch, F.yaw, -F.roll, 'YXZ');
+        if (m.userData.prop) m.userData.prop.rotation.z = F.spin; if (m.userData.rotor) { m.userData.rotor.rotation.y = F.spin; m.userData.tail.rotation.x = F.spin * 1.5; }
+        P.pos.copy(F.pos); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.face = F.yaw;
+        seatWorld(F.seat); me.position.copy(seatP); me.quaternion.copy(seatQ); me.scale.setScalar(1); sitPose(me, dt, false);
+        $('flInfo').textContent = `${F.kind === 'plane' ? '✈' : '🚁'} 速度 ${Math.round(F.speed * 3.6)} km/h ｜ 高度 ${Math.round(F.pos.y)} 米${F.kind === 'plane' ? ` ｜ 油門 ${Math.round(F.throttle * 100)}%` : ''}${F.ground ? ' ｜ 喺地面' : ''}`;
+        if (ptrs.size === 0) { let d = F.yaw + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt * 1.5); }
+      }
+    } else if (P.seat) {
       // 坐緊機動遊戲：位置 / 方向跟座位
       const r = park.rides[P.seat.r];
       seatWorld(r.seats[P.seat.s]);
@@ -802,7 +938,10 @@ function startGame(myName) {
         myBike.visible = false;
         animateAvatar(me, P.anim, dt, Math.min(1.4, im + 0.3));
       }
+      if (P.mech) mechUpdate(dt, mv.lengthSq() > 0.01);
     }
+    myMech.visible = !!P.mech;
+    arena.update(dt, T, P.pos, monTargetPos());
     dogFollow(myDog, P.pos, P.face, dt);
     if (P.spraying) emitSpray(me);
 
@@ -817,7 +956,10 @@ function startGame(myName) {
       else r.pos.lerp(tgt, Math.min(1, dt * 12));
       let df = s.r - r.face; df = Math.atan2(Math.sin(df), Math.cos(df)); r.face += df * Math.min(1, dt * 12);
       const rr = s.sd && park.rides[s.sd[0]], rs = rr && rr.seats[s.sd[1]];
-      if (rs) {
+      remoteVehicles(r, s, dt);
+      if (s.fl) {
+        const m = r.plane; seatWorld(m.userData.seatObj); r.av.position.copy(seatP); r.av.quaternion.copy(seatQ); sitPose(r.av, dt, false); attachHeld(r.av, null);
+      } else if (rs) {
         seatWorld(rs); r.pos.copy(seatP); r.av.position.copy(seatP); r.av.quaternion.copy(seatQ); r.av.scale.setScalar(s.sc || 1);
         sitPose(r.av, dt, rr.thrill); attachHeld(r.av, null);
       } else {
@@ -857,8 +999,8 @@ function startGame(myName) {
     } else { fxMat.opacity = 0; fxLight.intensity = 0; }
 
     // 互動提示
-    curInter = P.seat ? null : findInteract();
-    const lbl = P.seat ? '🚪 落車' : curInter ? curInter.label() : (P.held ? useLabel() : null);
+    curInter = P.seat || P.flight ? null : findInteract();
+    const lbl = P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : null);
     $('act').classList.toggle('hidden', !lbl); if (lbl && $('act').textContent !== lbl) $('act').textContent = lbl;
 
     // 電梯面板
@@ -883,10 +1025,11 @@ function startGame(myName) {
     npcs.update(dt, T);
 
     // 鏡頭
-    const target = new V3(P.pos.x, P.pos.y + 1.5 * P.scale, P.pos.z);
+    const target = new V3(P.pos.x, P.pos.y + (P.mech ? 20 : P.flight ? 2.5 : 1.5 * P.scale), P.pos.z);
+    if (P.flight && firstPerson) seatWorld(P.flight.seat);
     const dir = new V3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
     let look = null;
-    if (P.seat && firstPerson) {
+    if ((P.seat || P.flight) && firstPerson) {
       // 坐機動遊戲第一身：鏡頭跟住座位一齊翻轉
       me.visible = false;
       camera.position.copy(seatP).addScaledVector(tmpUp.set(0, 1, 0).applyQuaternion(seatQ), 1.25 * P.scale);
@@ -900,11 +1043,13 @@ function startGame(myName) {
     } else {
       me.visible = true;
       let dist = camDist * Math.max(1, P.scale * 0.8);
+      if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, P.flight.kind === 'plane' ? 18 : 16);
+      me.visible = !P.mech;
       ray.set(target, dir); ray.far = dist;
       const hit = ray.intersectObjects(camBlockers, false)[0];
       if (hit) dist = Math.max(0.6, hit.distance - 0.25);
       if (P.camper >= 0) { const c = campers.list[P.camper]; dist = Math.min(dist, camRayCols(c.toLocal(target), c.rotL(dir), dist, c.cols)); }
-      else if (!P.seat) dist = Math.min(dist, camRayCols(target, dir, dist));
+      else if (!P.seat && !P.flight) dist = Math.min(dist, camRayCols(target, dir, dist));
       camera.position.copy(target).addScaledVector(dir, dist);
       // 鏡頭唔可以穿落地底；向上望時鏡頭貼地，視線向天空抬高
       if (camera.position.y < P.pos.y + 0.25) camera.position.y = P.pos.y + 0.25;

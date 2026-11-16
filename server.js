@@ -66,6 +66,30 @@ function liftCmd(L, m, now) {
   }
 }
 
+// ---------- 怪獸（打怪獸場，所有玩家打同一隻）----------
+const STAGE = { x0: -2050, x1: -1400, z0: -450, z1: 250 };
+const KAIJU = [{ hp: 1200, sp: 7 }, { hp: 1500, sp: 6 }, { hp: 1800, sp: 8 }];
+const mon = { ty: 0, hp: 1200, mx: 1200, x: -1725, z: -100, r: 0, s: 'idle', t0: Date.now(), cdS: 0, cdB: 0, tgt: 0, respawn: 0, wx: -1725, wz: -100 };
+const inStage = p => p && p[0] > STAGE.x0 && p[0] < STAGE.x1 && p[2] > STAGE.z0 && p[2] < STAGE.z1;
+function monTick(now, dt) {
+  const set = (s) => { mon.s = s; mon.t0 = now; };
+  if (mon.s === 'dead') { if (now > mon.respawn) { mon.ty = (mon.ty + 1) % 3; mon.mx = mon.hp = KAIJU[mon.ty].hp; mon.x = -1725; mon.z = -100; set('roar'); broadcast({ t: 'ev', kind: 'kSpawn', ty: mon.ty }); } return; }
+  if ((mon.s === 'roar' && now - mon.t0 < 3000) || (mon.s === 'swipe' && now - mon.t0 < 1600) || (mon.s === 'beam' && now - mon.t0 < 2600)) return;
+  // 搵最近嘅機甲
+  let best = null, bd = 1e9;
+  for (const [id, p] of players) { const st = p.st; if (!st || !st.mk || !inStage(st.p)) continue; const d = Math.hypot(st.p[0] - mon.x, st.p[2] - mon.z); if (d < bd) { bd = d; best = { id, st }; } }
+  let tx, tz;
+  if (best) { tx = best.st.p[0]; tz = best.st.p[2]; mon.tgt = best.id; }
+  else { if (Math.hypot(mon.wx - mon.x, mon.wz - mon.z) < 10) { mon.wx = STAGE.x0 + 120 + Math.random() * 420; mon.wz = STAGE.z0 + 120 + Math.random() * 460; } tx = mon.wx; tz = mon.wz; mon.tgt = 0; }
+  const dx = tx - mon.x, dz = tz - mon.z, d = Math.hypot(dx, dz);
+  mon.r = Math.atan2(dx, dz);
+  if (best && d < 48 && now > mon.cdS) { set('swipe'); mon.cdS = now + 3500; broadcast({ t: 'ev', kind: 'kAtk', a: 'swipe', to: best.id, dmg: 18 }); return; }
+  if (best && d > 60 && d < 170 && now > mon.cdB) { set('beam'); mon.cdB = now + 8000; broadcast({ t: 'ev', kind: 'kAtk', a: 'beam', to: best.id, dmg: 30 }); return; }
+  const stop = best ? 40 : 2;
+  if (d > stop) { const sp = (best ? KAIJU[mon.ty].sp : 3) * dt; mon.x += dx / d * Math.min(sp, d - stop); mon.z += dz / d * Math.min(sp, d - stop); if (mon.s !== 'walk') set('walk'); }
+  else if (mon.s !== 'idle') set('idle');
+}
+
 function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 function broadcast(obj, except) {
   const s = JSON.stringify(obj);
@@ -99,6 +123,13 @@ wss.on('connection', ws => {
       }
       case 'ev': if (me) broadcast({ t: 'ev', from: id, kind: String(m.kind), lift: m.lift, pos: m.pos }); break;
       case 'world': if (me && typeof m.toiletLight === 'boolean') { world.toiletLight = m.toiletLight; broadcast({ t: 'world', world }); } break;
+      case 'khit': {
+        const st = me && me.st, dmg = Math.min(150, Math.max(0, Number(m.dmg) || 0));
+        if (!st || !st.mk || mon.s === 'dead' || Math.hypot(st.p[0] - mon.x, st.p[2] - mon.z) > 260) break;
+        mon.hp = Math.max(0, mon.hp - dmg);
+        if (mon.hp <= 0) { mon.s = 'dead'; mon.t0 = now; mon.respawn = now + 12000; broadcast({ t: 'ev', kind: 'kDead', by: me.name, ty: mon.ty }); }
+        break;
+      }
       case 'rtc': { const to = players.get(m.to); if (to && me) send(to.ws, { t: 'rtc', from: id, data: m.data }); break; }
     }
   });
@@ -110,9 +141,10 @@ setInterval(() => {
   const now = Date.now();
   for (const L of lifts) if (L.pendingOpen && !moving(L, now)) { L.pendingOpen = false; liftCmd(L, { cmd: 'open' }, now); broadcastLifts(); }
   if (!players.size) return;
+  monTick(now, 0.1);
   const snap = {};
   for (const [id, p] of players) if (p.st) snap[id] = p.st;
-  broadcast({ t: 'snap', p: snap });
+  broadcast({ t: 'snap', p: snap, m: { ty: mon.ty, hp: mon.hp, mx: mon.mx, x: +mon.x.toFixed(1), z: +mon.z.toFixed(1), r: +mon.r.toFixed(2), s: mon.s, t0: mon.t0, tg: mon.tgt } });
 }, 100);
 
 server.listen(PORT, () => console.log(`搭Lift遊戲 running: http://localhost:${PORT}`));

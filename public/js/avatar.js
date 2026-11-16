@@ -1,5 +1,6 @@
 // 角色 + 柴犬模型（低多邊形）
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export const SKINS = ['#ffe0c4', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5a3a22'];
 export const SHIRTS = ['#e53935', '#1e88e5', '#43a047', '#fdd835', '#8e24aa', '#ff7043', '#212121', '#ffffff'];
@@ -38,44 +39,99 @@ function hatMesh(id) {
   return g;
 }
 
-// look = {gender:'m'|'f', skin, shirt, hat}
+// ---------- 共用幾何 / 材質（好多角色都用同一份，慳記憶體）----------
+const GEO = new Map(), MATS = new Map();
+const geo = (key, make) => { if (!GEO.has(key)) GEO.set(key, make()); return GEO.get(key); };
+const mat = (color, extra) => { const k = color + (extra ? JSON.stringify(extra) : ''); if (!MATS.has(k)) MATS.set(k, std(color, extra)); return MATS.get(k); };
+const rbox = (w, h, d, r) => geo(`rb${w},${h},${d},${r}`, () => new RoundedBoxGeometry(w, h, d, 2, r));
+const shade = (hex, f) => '#' + new THREE.Color(hex).multiplyScalar(f).getHexString();
+export const HAIRS = ['#1b1b1b', '#4e2a12', '#8d5524', '#d9a441', '#c0392b', '#7e57c2'];
+export const PANTS = ['#2f3e5c', '#263238', '#5d4037', '#455a64', '#1565c0', '#ad1457'];
+
+// 塊面：透明 canvas 畫眼（有反光）、眉、笑口、腮紅；按性別快取
+const FACES = new Map();
+function faceMat(gender) {
+  if (FACES.has(gender)) return FACES.get(gender);
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const f = gender === 'f';
+  g.fillStyle = 'rgba(255,120,130,0.35)';
+  [[28, 84], [100, 84]].forEach(([x, y]) => { g.beginPath(); g.ellipse(x, y, 13, 8, 0, 0, 7); g.fill(); });
+  [[42, 62], [86, 62]].forEach(([x, y]) => {
+    g.fillStyle = '#1d1d2b'; g.beginPath(); g.ellipse(x, y, 9, f ? 12 : 11, 0, 0, 7); g.fill();
+    g.fillStyle = '#3d6fd6'; g.beginPath(); g.ellipse(x, y + 3, 6, 7, 0, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(x - 3, y - 4, 3.6, 0, 7); g.fill(); g.beginPath(); g.arc(x + 3, y + 4, 1.6, 0, 7); g.fill();
+    if (f) { g.strokeStyle = '#1d1d2b'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x - 9, y - 9); g.lineTo(x - 14, y - 13); g.moveTo(x + 9, y - 9); g.lineTo(x + 14, y - 13); g.stroke(); }
+  });
+  g.strokeStyle = f ? '#5a3a22' : '#2b1d14'; g.lineWidth = f ? 3 : 4.5; g.lineCap = 'round';
+  [[42, 1], [86, -1]].forEach(([x, s]) => { g.beginPath(); g.moveTo(x - 10, 42 + s * 2); g.quadraticCurveTo(x, 35, x + 10, 42 - s * 2); g.stroke(); });
+  g.strokeStyle = '#7a2a2a'; g.lineWidth = 4; g.beginPath(); g.arc(64, 84, 13, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke();
+  if (f) { g.fillStyle = 'rgba(220,60,90,0.5)'; g.beginPath(); g.arc(64, 93, 5, 0, Math.PI); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({ map: t, transparent: true, alphaTest: 0.05, roughness: 0.6 });
+  FACES.set(gender, m); return m;
+}
+
+// look = {gender:'m'|'f', skin, shirt, hat, hair?, pants?}
 export function buildAvatar(look = {}) {
-  const skin = std(look.skin || SKINS[0]);
-  const shirt = std(look.shirt || SHIRTS[1]);
-  const pantsMat = std(look.gender === 'f' ? '#37474f' : '#263238');
-  const hairMat = std(look.gender === 'f' ? '#4e2a12' : '#1b1b1b');
+  const f = look.gender === 'f';
+  const skinC = look.skin || SKINS[0], shirtC = look.shirt || SHIRTS[1];
+  const skin = mat(skinC), shirt = mat(shirtC, { roughness: 0.85 }), shirtDark = mat(shade(shirtC, 0.78), { roughness: 0.85 });
+  const pantsMat = mat(look.pants || (f ? '#37474f' : '#2f3e5c'), { roughness: 0.9 });
+  const hairMat = mat(look.hair || (f ? '#4e2a12' : '#1b1b1b'), { roughness: 0.6 });
+  const white = mat('#f5f5f5'), shoeMat = mat(f ? '#c2185b' : '#263238', { roughness: 0.5 });
   const root = new THREE.Group();
   const body = new THREE.Group(); root.add(body);
+  const add = (g, m, x, y, z, parent = body) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); parent.add(o); return o; };
 
-  const torso = box(0.46, 0.55, 0.26, shirt); torso.position.y = 1.08; body.add(torso);
-  const head = box(0.36, 0.36, 0.34, skin); head.position.y = 1.56; body.add(head);
-  // 眼
-  const eyeM = std('#111');
-  [-0.08, 0.08].forEach(x => { const e = box(0.05, 0.06, 0.02, eyeM); e.position.set(x, 1.58, 0.175); body.add(e); });
-  const mouth = box(0.1, 0.02, 0.02, std('#a33')); mouth.position.set(0, 1.48, 0.175); body.add(mouth);
-  // 頭髮
-  const hairTop = box(0.38, 0.08, 0.36, hairMat); hairTop.position.y = 1.76; body.add(hairTop);
-  if (look.gender === 'f') {
-    const back = box(0.38, 0.5, 0.08, hairMat); back.position.set(0, 1.48, -0.17); body.add(back);
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.34, 0.32, 12), shirt); skirt.position.y = 0.72; body.add(skirt);
+  // 身（圓角）+ 衫領 + 鈕 + 皮帶
+  const tw = f ? 0.48 : 0.54;
+  add(rbox(tw, 0.52, 0.29, 0.07), shirt, 0, 1.04, 0);
+  add(rbox(tw + 0.02, 0.1, 0.31, 0.04), shirtDark, 0, 0.83, 0);
+  add(geo('collarL', () => new THREE.BoxGeometry(0.13, 0.05, 0.02).rotateZ(-0.5)), white, -0.06, 1.27, 0.15);
+  add(geo('collarR', () => new THREE.BoxGeometry(0.13, 0.05, 0.02).rotateZ(0.5)), white, 0.06, 1.27, 0.15);
+  [1.16, 1.06, 0.96].forEach(y => add(geo('btn', () => new THREE.CylinderGeometry(0.014, 0.014, 0.01, 8).rotateX(Math.PI / 2)), white, 0, y, 0.148));
+  if (!f) { add(rbox(tw + 0.01, 0.06, 0.3, 0.02), mat('#3e2723'), 0, 0.79, 0); add(geo('buckle', () => new THREE.BoxGeometry(0.07, 0.05, 0.02)), goldMat, 0, 0.79, 0.155); }
+  // 頸 + 圓角大頭 + 塊面 + 耳仔
+  add(geo('neck', () => new THREE.CylinderGeometry(0.08, 0.09, 0.08, 10)), skin, 0, 1.31, 0);
+  add(rbox(0.44, 0.42, 0.4, 0.12), skin, 0, 1.53, 0);
+  add(geo('face', () => new THREE.PlaneGeometry(0.36, 0.36)), faceMat(f ? 'f' : 'm'), 0, 1.51, 0.202);
+  [-1, 1].forEach(s => add(geo('ear', () => new THREE.SphereGeometry(0.05, 8, 6)), skin, s * 0.225, 1.52, 0).scale.set(0.5, 1, 0.8));
+  // 頭髮：男仔短髮有啲尖；女仔長髮 + 瀏海 + 馬尾 + 蝴蝶結
+  add(rbox(0.47, 0.15, 0.43, 0.07), hairMat, 0, 1.7, -0.005);
+  if (f) {
+    add(rbox(0.48, 0.56, 0.12, 0.05), hairMat, 0, 1.44, -0.17);
+    [-1, 1].forEach(s => add(rbox(0.07, 0.4, 0.3, 0.03), hairMat, s * 0.235, 1.5, -0.02));
+    add(rbox(0.36, 0.08, 0.06, 0.03), hairMat, 0.02, 1.67, 0.19).rotation.z = -0.15;
+    add(geo('tail', () => new THREE.CylinderGeometry(0.07, 0.03, 0.34, 8)), hairMat, 0, 1.42, -0.27).rotation.x = 0.3;
+    add(geo('bow', () => new THREE.SphereGeometry(0.06, 8, 6)), mat('#ff4081'), 0, 1.6, -0.25).scale.set(1.6, 0.8, 0.8);
   } else {
-    const back = box(0.38, 0.18, 0.06, hairMat); back.position.set(0, 1.66, -0.16); body.add(back);
+    add(rbox(0.47, 0.26, 0.1, 0.04), hairMat, 0, 1.6, -0.17);
+    [-1, 1].forEach(s => add(rbox(0.06, 0.16, 0.24, 0.03), hairMat, s * 0.23, 1.62, -0.06));
+    for (let i = -2; i <= 2; i++) add(geo('spike', () => new THREE.ConeGeometry(0.06, 0.12, 5)), hairMat, i * 0.08, 1.71, 0.17).rotation.x = 1.1;
   }
-  const hat = hatMesh(look.hat || 'gold'); hat.position.y = 1.76; body.add(hat);
+  const hat = hatMesh(look.hat || 'gold'); hat.position.y = 1.74; hat.scale.setScalar(1.22); body.add(hat);
 
-  const limb = (w, h, mat, x, y) => {
-    const pivot = new THREE.Group(); pivot.position.set(x, y, 0);
-    const m = box(w, h, w, mat); m.position.y = -h / 2; pivot.add(m); body.add(pivot); return pivot;
-  };
-  const armL = limb(0.13, 0.52, shirt, -0.3, 1.33), armR = limb(0.13, 0.52, shirt, 0.3, 1.33);
-  [armL, armR].forEach(a => { const h = box(0.12, 0.1, 0.12, skin); h.position.y = -0.56; a.add(h); });
-  const legL = limb(0.17, 0.8, pantsMat, -0.12, 0.8), legR = limb(0.17, 0.8, pantsMat, 0.12, 0.8);
-  [legL, legR].forEach(l => { const s = box(0.18, 0.08, 0.26, std('#222')); s.position.set(0, -0.78, 0.04); l.add(s); });
+  // 手腳（關節喺膊頭 / 髖位）
+  const pivot = (x, y) => { const p = new THREE.Group(); p.position.set(x, y, 0); body.add(p); return p; };
+  const sx = tw / 2 + 0.08;
+  const armL = pivot(-sx, 1.24), armR = pivot(sx, 1.24);
+  [armL, armR].forEach(a => {
+    add(rbox(0.15, 0.24, 0.15, 0.05), shirt, 0, -0.1, 0, a);
+    add(rbox(0.13, 0.26, 0.13, 0.05), skin, 0, -0.33, 0, a);
+    add(geo('handS', () => new THREE.SphereGeometry(0.075, 10, 8)), skin, 0, -0.5, 0.01, a);
+  });
+  const legL = pivot(-0.13, 0.8), legR = pivot(0.13, 0.8);
+  [legL, legR].forEach(l => {
+    add(rbox(0.19, 0.72, 0.2, 0.06), pantsMat, 0, -0.36, 0, l);
+    add(rbox(0.2, 0.1, 0.3, 0.04), shoeMat, 0, -0.74, 0.04, l);
+    add(rbox(0.21, 0.04, 0.31, 0.015), white, 0, -0.785, 0.04, l);
+  });
+  if (f) add(geo('skirt', () => new THREE.CylinderGeometry(0.24, 0.36, 0.34, 14)), pantsMat, 0, 0.72, 0);
 
   // 手持道具位
   const hand = new THREE.Group(); hand.position.set(0, -0.6, 0.08); armR.add(hand);
 
-  root.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+  root.traverse(o => { if (o.isMesh && !(o.material.map && o.material.transparent)) o.castShadow = true; });
   root.userData = { body, armL, armR, legL, legR, hand, phase: 0, held: null };
   return root;
 }

@@ -3,9 +3,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TX from './textures.js';
+import { shell, storeInterior, pickKind, houseInterior, barnInterior, school } from './interiors.js';
 
 export const CHUNK = 200, HALF_WORLD = 5000, NCH = 25;          // 區號 -24..24
 export const TOWN = { x0: -300, x1: 300, z0: -300, z1: 100 };   // 原本小鎮（唔生成）
+export const AIRPORT = { x0: 1900, x1: 3100, z0: -500, z1: 300 }; // 機場
+export const ARENA = { x0: -2100, x1: -1300, z0: -500, z1: 300 }; // 打怪獸場
+const EXCL = [TOWN, AIRPORT, ARENA];
 const NEAR = 1, FAR = 4, M = 94;                                 // 近區半徑、遠區半徑、區內可用半闊
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...extra });
 
@@ -24,12 +28,17 @@ export const LANDMARKS = [
   { i: -9, j: 7, type: 'lake', name: '🌊 大湖' },
   { i: 14, j: 12, type: 'lake', name: '🌊 東湖' },
   { i: -15, j: -14, type: 'lake', name: '🌊 西湖' },
+  { i: 3, j: 4, type: 'school', name: '柏熙小學' }, { i: -5, j: -6, type: 'school', name: '海景中學' }, { i: 9, j: 6, type: 'school', name: '東區小學' },
+  { i: -4, j: 9, type: 'school', name: '北山中學' }, { i: 5, j: -9, type: 'school', name: '南灣國際學校' }, { i: -13, j: 4, type: 'school', name: '西林小學' },
 ];
+const inRect = (r, i, j) => i * CHUNK + 100 > r.x0 && i * CHUNK - 100 < r.x1 && j * CHUNK + 100 > r.z0 && j * CHUNK - 100 < r.z1;
 const lmAt = (i, j) => LANDMARKS.find(l => l.i === i && l.j === j);
 // 區域類型：市中心高樓 → 住宅 → 郊外森林 / 農田 / 湖
 export function district(i, j) {
   if (Math.abs(i) > 24 || Math.abs(j) > 24) return 'none';
   if (inTown(i, j)) return 'town';
+  if (inRect(AIRPORT, i, j)) return 'airport';
+  if (inRect(ARENA, i, j)) return 'arena';
   const lm = lmAt(i, j); if (lm) return lm.type;
   const d = Math.hypot(i, j) * CHUNK, n = vnoise(i * 0.18, j * 0.18, 1), n2 = vnoise(i * 0.35 + 50, j * 0.35 - 20, 2);
   if (d < 1600) return n > 0.3 ? 'city' : n2 > 0.5 ? 'park' : 'res';
@@ -38,8 +47,8 @@ export function district(i, j) {
   if (n > 0.6) return 'forest';
   return n2 > 0.45 ? 'farm' : n2 > 0.25 ? 'res' : 'forest';
 }
-export const DISTRICT_COLOR = { city: '#8a9bb0', res: '#e8c9a0', park: '#7cc47c', forest: '#2e7d32', farm: '#d4c26a', lake: '#4aa3df', stadium: '#e57373', town: '#ffd54f', none: '#335' };
-export const DISTRICT_NAME = { city: '市中心', res: '住宅區', park: '公園', forest: '森林', farm: '農田', lake: '湖', stadium: '大球場', town: '小鎮', none: '' };
+export const DISTRICT_COLOR = { school: '#ff8a65', airport: '#b0bec5', arena: '#7e57c2', city: '#8a9bb0', res: '#e8c9a0', park: '#7cc47c', forest: '#2e7d32', farm: '#d4c26a', lake: '#4aa3df', stadium: '#e57373', town: '#ffd54f', none: '#335' };
+export const DISTRICT_NAME = { school: '學校', airport: '機場', arena: '打怪獸場', city: '市中心', res: '住宅區', park: '公園', forest: '森林', farm: '農田', lake: '湖', stadium: '大球場', town: '小鎮', none: '' };
 
 // ---------- 材質 ----------
 function facadeTex(wall, win, frame, cellW = 64, cellH = 56, ww = 0.6, wh = 0.55) {
@@ -108,7 +117,7 @@ function tree(B, x, z, s, pine) {
 // ---------- 每區嘅規劃（近 / 遠都用同一份，所以一樣）----------
 function plan(i, j) {
   const t = district(i, j), R = rng(Math.floor(hash(i, j, 7) * 4294967296)), cx = i * CHUNK, cz = j * CHUNK;
-  const P = { t, cx, cz, b: [], h: [], trees: [], R };
+  const P = { t, cx, cz, i, j, b: [], h: [], trees: [], R };
   const d = Math.hypot(cx, cz);
   const quads = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([qx, qz]) => [cx + (qx < 0 ? -M : 7), cz + (qz < 0 ? -M : 7), cx + (qx < 0 ? -7 : M), cz + (qz < 0 ? -7 : M)]);
   if (t === 'city') {
@@ -161,18 +170,24 @@ function buildNear(P) {
     B.add(roadGeo(cx - 6, cz - M, cx + 6, cz + M, 0.02), MAT.road); B.add(roadGeo(cx - M, cz - 6, cx + M, cz + 6, 0.022), MAT.road);
   }
   if (t === 'res') { B.add(roadGeo(cx - 6, cz - M, cx + 6, cz + M, 0.02), MAT.road); B.add(roadGeo(cx - M, cz - 6, cx + M, cz + 6, 0.022), MAT.road); }
+  const RI = rng(Math.floor(hash(cx, cz, 11) * 4294967296));
   for (const b of P.b) {
-    B.box(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, FAC[b.f].m);
+    if (b.top) B.box(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, FAC[b.f].m);
+    else {
+      // 地下（4.5 米高）係可以行入去嘅舖 / 大堂；上面係實心大廈
+      const GF = 4.5, I = shell(B, b.x0, b.z0, b.x1, b.z1, GF, FAC[b.f].m);
+      B.box(b.x0, GF, b.z0, b.x1, b.y1, b.z1, FAC[b.f].m);
+      storeInterior(B, I, pickKind(b.x1 - b.x0, b.z1 - b.z0, t === 'res', RI), RI);
+    }
     B.box(b.x0 - 0.3, b.y1, b.z0 - 0.3, b.x1 + 0.3, b.y1 + 0.6, b.z1 + 0.3, MAT.roof, false);
     if (b.y1 > 40) { B.box((b.x0 + b.x1) / 2 - 3, b.y1 + 0.6, (b.z0 + b.z1) / 2 - 2, (b.x0 + b.x1) / 2 + 3, b.y1 + 3.6, (b.z0 + b.z1) / 2 + 2, MAT.roof, false); }
     if (b.y1 > 120) { const a = new THREE.CylinderGeometry(0.15, 0.3, 14, 6); a.translate((b.x0 + b.x1) / 2, b.y1 + 7, (b.z0 + b.z1) / 2); B.add(a, MAT.steel); const s = new THREE.SphereGeometry(0.5, 8, 6); s.translate((b.x0 + b.x1) / 2, b.y1 + 14.3, (b.z0 + b.z1) / 2); B.add(s, MAT.glassAnt); }
-    if (!b.top) B.box((b.x0 + b.x1) / 2 - 2, 0, b.z1, (b.x0 + b.x1) / 2 + 2, 3, b.z1 + 0.15, MAT.steel, false);
+    if (!b.top) B.box((b.x0 + b.x1) / 2 - 2.2, 3.4, b.z1, (b.x0 + b.x1) / 2 + 2.2, 3.6, b.z1 + 1.6, MAT.steel, false);
   }
   for (const h of P.h) {
-    B.box(h.x0, 0, h.z0, h.x1, h.y1, h.z1, HOUSE[h.wall], true, 3, 2.8);
+    houseInterior(B, h, HOUSE[h.wall]);
     const w = h.x1 - h.x0, d = h.z1 - h.z0, r = Math.max(w, d) * 0.72, rh = 2.6 + w * 0.1;
     const roof = new THREE.ConeGeometry(r, rh, 4); roof.rotateY(Math.PI / 4); roof.scale(w * 1.12 / (r * Math.SQRT2), 1, d * 1.12 / (r * Math.SQRT2)); roof.translate((h.x0 + h.x1) / 2, h.y1 + rh / 2, (h.z0 + h.z1) / 2); B.add(roof, ROOF[h.roof]);
-    B.box((h.x0 + h.x1) / 2 - 0.6, 0, h.z1, (h.x0 + h.x1) / 2 + 0.6, 2.1, h.z1 + 0.08, MAT.wood, false);
     // 圍欄
     B.box(h.x0 - 3, 0, h.z1 + 3, (h.x0 + h.x1) / 2 - 1, 0.8, h.z1 + 3.1, MAT.white); B.box((h.x0 + h.x1) / 2 + 1, 0, h.z1 + 3, h.x1 + 3, 0.8, h.z1 + 3.1, MAT.white);
   }
@@ -191,7 +206,7 @@ function buildNear(P) {
       for (let s = 0; s < 10; s++) { const a = z0 + (z1 - z0) * s / 10; B.add(planeGeo(x0, a, x1, a + (z1 - z0) / 10, 0.015 + s * 0.0005, 6), crops[s % 2]); }
     });
     const [bx, bz] = P.barn;
-    B.box(bx - 8, 0, bz - 6, bx + 8, 7, bz + 6, MAT.red, true, 16, 7);
+    barnInterior(B, bx, bz, MAT.red);
     const gab = new THREE.CylinderGeometry(7.2, 7.2, 16.4, 3, 1); gab.rotateZ(Math.PI / 2); gab.rotateX(Math.PI / 6); gab.scale(1, 0.55, 1); gab.translate(bx, 9.5, bz); B.add(gab, MAT.white);
     const silo = new THREE.CylinderGeometry(3, 3, 14, 14); silo.translate(bx + 13, 7, bz); B.add(silo, MAT.steel); B.cols.push({ min: [bx + 10, 0, bz - 3], max: [bx + 16, 14, bz + 3] });
     const cap = new THREE.ConeGeometry(3.2, 3, 14); cap.translate(bx + 13, 15.5, bz); B.add(cap, MAT.red);
@@ -201,6 +216,7 @@ function buildNear(P) {
     const s = new THREE.CircleGeometry(1, 40); s.rotateX(-Math.PI / 2); s.scale(P.rx + 6, 1, P.rz + 6); s.translate(cx, 0.03, cz); B.add(s, MAT.sand);
     B.box(cx + P.rx - 22, 0.05, cz - 1.5, cx + P.rx + 4, 0.45, cz + 1.5, MAT.wood);            // 碼頭
   }
+  if (t === 'school') { const lm = lmAt(P.i, P.j); school(B, cx, cz, lm.name); for (let k = 0; k < 12; k++) tree(B, cx + 60 + (k % 3) * 8, cz - 50 + Math.floor(k / 3) * 10, 1, false); }
   if (t === 'stadium') {
     const outer = new THREE.CylinderGeometry(78, 78, 22, 48, 1, true); outer.scale(1, 1, 0.75); outer.translate(cx, 11, cz); B.add(outer, MAT.white);
     const tiers = new THREE.CylinderGeometry(76, 50, 20, 48, 1, true); tiers.scale(1, 1, 0.75); tiers.translate(cx, 10, cz); B.add(tiers, std('#c62828', { side: THREE.DoubleSide }));
@@ -227,6 +243,7 @@ function buildFar(P) {
   for (const h of P.h) { list.push(coloredBox(h.x0, 0, h.z0, h.x1, h.y1, h.z1, '#f2e6d0')); list.push(coloredBox(h.x0, h.y1, h.z0, h.x1, h.y1 + 2.5, h.z1, ROOF[h.roof].color.getStyle())); }
   for (let k = 0; k < P.trees.length; k += 2) { const [x, z, s, pine] = P.trees[k]; list.push(coloredBox(x - 1.6 * s, 1.5 * s, z - 1.6 * s, x + 1.6 * s, 5.5 * s, z + 1.6 * s, pine ? '#1f5f2a' : '#3f8f3a')); }
   if (P.t === 'lake') list.push(coloredBox(P.cx - P.rx * 0.8, 0.02, P.cz - P.rz * 0.8, P.cx + P.rx * 0.8, 0.06, P.cz + P.rz * 0.8, '#2a7fb8'));
+  if (P.t === 'school') { list.push(coloredBox(P.cx - 72, 0, P.cz - 88, P.cx + 72, 13, P.cz - 60, '#f3e9d2')); list.push(coloredBox(P.cx - 64, 0.02, P.cz - 50, P.cx - 14, 0.05, P.cz - 22, '#c75b39')); }
   if (P.t === 'stadium') list.push(coloredBox(P.cx - 75, 0, P.cz - 56, P.cx + 75, 22, P.cz + 56, '#e0e0e0'));
   if (P.t === 'farm') list.push(coloredBox(P.cx - M, 0.01, P.cz - M, P.cx + M, 0.03, P.cz + M, '#c9b65a'));
   if (!list.length) return null;
@@ -241,12 +258,21 @@ function buildRoads(scene) {
   const lines = []; for (let k = -24; k <= 25; k++) lines.push(k * CHUNK - 100);
   // 沿 z 方向（固定 x）
   const zParts = [], xParts = [];
+  const cutLine = (v, isX) => {
+    let parts = [[-HALF_WORLD, HALF_WORLD]];
+    for (const r of EXCL) {
+      const [a0, a1, b0, b1] = isX ? [r.x0, r.x1, r.z0, r.z1] : [r.z0, r.z1, r.x0, r.x1];
+      if (!(v > a0 && v < a1)) continue;
+      parts = parts.flatMap(([p, q]) => { const out = []; if (b0 > p) out.push([p, Math.min(q, b0)]); if (b1 < q) out.push([Math.max(p, b1), q]); return out.filter(([u, w]) => w - u > 1); });
+    }
+    return parts;
+  };
   for (const x of lines) {
-    const cut = x > TOWN.x0 && x < TOWN.x1 ? [[-HALF_WORLD, TOWN.z0], [TOWN.z1, HALF_WORLD]] : [[-HALF_WORLD, HALF_WORLD]];
+    const cut = cutLine(x, true);
     cut.forEach(([a, b]) => { const g = new THREE.PlaneGeometry(12, b - a); g.rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getY(i) * (b - a) / 12, uv.getX(i)); g.translate(x, 0.01, (a + b) / 2); zParts.push(g); });
   }
   for (const z of lines) {
-    const cut = z > TOWN.z0 && z < TOWN.z1 ? [[-HALF_WORLD, TOWN.x0], [TOWN.x1, HALF_WORLD]] : [[-HALF_WORLD, HALF_WORLD]];
+    const cut = cutLine(z, false);
     cut.forEach(([a, b]) => { const g = new THREE.PlaneGeometry(b - a, 12); g.rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * (b - a) / 12); g.translate((a + b) / 2, 0.011, z); xParts.push(g); });
   }
   const m1 = new THREE.Mesh(mergeGeometries(zParts), rd), m2 = new THREE.Mesh(mergeGeometries(xParts), rd);
@@ -288,7 +314,7 @@ export function buildCity(scene, grid) {
       // 排隊建
       queue = [];
       for (let di = -FAR; di <= FAR; di++) for (let dj = -FAR; dj <= FAR; dj++) {
-        const i = ci + di, j = cj + dj, t = district(i, j); if (t === 'none' || t === 'town') continue;
+        const i = ci + di, j = cj + dj, t = district(i, j); if (t === 'none' || t === 'town' || t === 'airport' || t === 'arena') continue;
         const ring = Math.max(Math.abs(di), Math.abs(dj)), c = get(i, j);
         if (ring <= NEAR && !c.near) queue.push({ c, near: true, d: ring - 10 });
         else if (c.far === null) queue.push({ c, near: false, d: Math.hypot(di, dj) });

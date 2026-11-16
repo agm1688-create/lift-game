@@ -89,6 +89,16 @@
   #musicBox { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:64px; background:var(--bg); padding:8px; border-radius:12px; display:flex; flex-direction:column; gap:6px; z-index:12; }
   #musicBox button { padding:8px 14px; border-radius:10px; background:#2d3a5a; font-size:14px; text-align:left; }
   #musicBox button.on { background:#1b8a3a; }
+  #flightPanel { position:absolute; left:50%; transform:translateX(-50%); bottom:96px; background:var(--bg); padding:6px 10px; border-radius:14px; text-align:center; }
+  #flInfo { font-size:13px; margin-bottom:4px; white-space:nowrap; }
+  .flRow { display:flex; gap:8px; justify-content:center; }
+  .flRow button, #mechPanel button { padding:10px 14px; border-radius:12px; background:#2d3a5a; font-size:15px; font-weight:bold; touch-action:none; user-select:none; }
+  #flUp { background:#1b8a3a; } #flDown { background:#b26a00; }
+  #mechPanel { position:absolute; right:calc(120px + env(safe-area-inset-right)); bottom:30px; display:flex; flex-direction:column; gap:8px; }
+  #mkPunch { background:#c62828 !important; } #mkBeam { background:#1565c0 !important; }
+  #fightHud { position:absolute; left:50%; transform:translateX(-50%); top:8px; width:min(420px,60vw); background:var(--bg); padding:6px 10px; border-radius:12px; font-size:13px; pointer-events:none; }
+  #fightHud .bar { height:10px; background:#333; border-radius:6px; overflow:hidden; margin-top:2px; }
+  #fightHud .bar i { display:block; height:100%; width:100%; transition:width .2s; }
   .keyBtn { display:block; width:100%; margin:6px 0; padding:12px; border-radius:10px; background:#2d3a5a; font-size:16px; }
   .keyBtn:active { background:#45568a; }
   .cancel { margin-top:6px; padding:8px 18px; border-radius:10px; background:#444; }
@@ -182,6 +192,10 @@
       <div class="row" id="optHat"></div>
       <label>衫色</label>
       <div class="row" id="optShirt"></div>
+      <label>頭髮</label>
+      <div class="row" id="optHair"></div>
+      <label>褲色</label>
+      <div class="row" id="optPants"></div>
       <button id="go">開始玩 ▶</button>
       <div class="tip">唔使註冊、唔使密碼。手機請打橫玩。電腦：WASD／方向鍵行，滑鼠拖動轉鏡頭，滾輪縮放，E 互動，空白鍵跳。</div>
     </div>
@@ -227,6 +241,15 @@
     <div id="lpDisp">1</div>
     <div id="lpInput"></div>
     <div id="lpKeys"></div>
+  </div>
+  <div id="flightPanel" class="hidden">
+    <div id="flInfo">✈</div>
+    <div class="flRow"><button id="flUp">⬆ 油門 / 升</button><button id="flDown">⬇ 減速 / 降</button><button id="flExit">🚪 落機</button></div>
+  </div>
+  <div id="mechPanel" class="hidden"><button id="mkPunch">👊 出拳</button><button id="mkBeam">⚡ 光炮</button><button id="mkOff">🔙 變返人</button></div>
+  <div id="fightHud" class="hidden">
+    <div id="khName">👾 怪獸</div><div class="bar"><i id="khBar" style="background:linear-gradient(90deg,#ff5252,#ff9100)"></i></div>
+    <div style="margin-top:4px">🤖 你嘅機甲</div><div class="bar"><i id="myBar" style="background:linear-gradient(90deg,#40c4ff,#69f0ae)"></i></div>
   </div>
   <div id="hotelPanel" class="hidden">
     <div id="hpTitle">柏熙酒店 Lift</div>
