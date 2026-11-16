@@ -63,11 +63,11 @@ export function buildWorld(scene, api) {
   rectsMinusHoles(-P, -P, P, P, holes).forEach(r => groundRect(r, plazaMat, 4));
   const farGround = new THREE.Group(); scene.add(farGround);
   const grassMat = std('#fff', { map: T.grassTex(1) });
-  const G = 3000;
+  const G = 5600;   // 大地圖 ±5000 米，再出少少
   [[-G, -G, G, -P], [-G, P, G, G], [-G, -P, -P, P], [P, -P, G, P]].forEach(r => farGround.add(groundRect(r, grassMat, 8, -0.02)));
   // 馬路
   const roadMat = std('#fff', { map: T.roadTex(1, 1) });
-  const road1 = new THREE.Mesh(new THREE.PlaneGeometry(2 * G, 12), roadMat); road1.rotation.x = -Math.PI / 2; road1.position.set(0, 0.01, P + 8); road1.material.map.repeat.set(G / 6, 1); road1.receiveShadow = true; farGround.add(road1);
+  const road1 = new THREE.Mesh(new THREE.PlaneGeometry(600, 12), roadMat); road1.rotation.x = -Math.PI / 2; road1.position.set(0, 0.01, P + 8); road1.material.map.repeat.set(50, 1); road1.receiveShadow = true; farGround.add(road1);
 
   // ---------- 電梯機房（地底） ----------
   const MR = { x0: -9, x1: 9, z0: -19, z1: -7, y0: MACHINE_ROOM_Y, y1: -0.3 };

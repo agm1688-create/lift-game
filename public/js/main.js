@@ -13,6 +13,7 @@ import { buildHotel, roomDoor, ROOM_TYPES } from './hotel.js';
 import { buildPark } from './park.js';
 import { playMusic, currentMusic, TRACKS } from './music.js';
 import { buildBike, bikePose, buildCampers } from './vehicles.js';
+import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD } from './city.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -123,13 +124,21 @@ function startGame(myName) {
   const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
-  for (const c of staticCols) {
-    if (c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200) { bigCols.push(c); continue; }
+  const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
+  function forCells(c, fn) {
     for (let gx = Math.floor(c.min[0] / GRID); gx <= Math.floor(c.max[0] / GRID); gx++)
-      for (let gz = Math.floor(c.min[2] / GRID); gz <= Math.floor(c.max[2] / GRID); gz++) {
-        const k = gx * 100003 + gz; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(c);
-      }
+      for (let gz = Math.floor(c.min[2] / GRID); gz <= Math.floor(c.max[2] / GRID); gz++) fn(gx * 100003 + gz);
   }
+  function gridAdd(list) {
+    for (const c of list) { if (isBig(c)) { bigCols.push(c); continue; } forCells(c, k => { let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(c); }); }
+  }
+  function gridRemove(list) {
+    const set = new Set(list);
+    for (const c of list) { if (isBig(c)) continue; forCells(c, k => { const l = grid.get(k); if (!l) return; const f = l.filter(x => !set.has(x)); if (f.length) grid.set(k, f); else grid.delete(k); }); }
+  }
+  gridAdd(staticCols);
+  // 大地圖（10 公里 × 10 公里，分區載入）
+  const city = buildCity(scene, { add: gridAdd, remove: gridRemove });
   let colStamp = 0;
   function nearCols(x, z, r, withBig = true) {
     colStamp++; const out = withBig ? bigCols.slice() : [];
@@ -684,7 +693,59 @@ function startGame(myName) {
     sfx.door(); toast(c.moving ? `🚐 跳咗上${c.name.slice(3)}！佢行緊，可以喺入面周圍行` : `🚐 上咗${c.name.slice(3)}，${Math.ceil(c.restLeft)} 秒後開車，會圍住成個小鎮行一圈`, 3500);
   }
 
-  if (location.search.includes('debug')) window.__g = { P, park, hotel, campers, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  // ================= 大地圖（撳一下傳送）=================
+  const mapCv = $('mapCv'), mg = mapCv.getContext('2d'), MS = mapCv.width / (HALF_WORLD * 2);
+  const w2m = (x, z) => [(x + HALF_WORLD) * MS, (z + HALF_WORLD) * MS];
+  let mapBase = null;
+  function drawMapBase() {
+    const c = document.createElement('canvas'); c.width = c.height = mapCv.width; const g = c.getContext('2d');
+    g.fillStyle = '#5a9a4a'; g.fillRect(0, 0, c.width, c.height);
+    for (let i = -24; i <= 24; i++) for (let j = -24; j <= 24; j++) {
+      const t = district(i, j); if (t === 'none') continue;
+      const [x, y] = w2m(i * CHUNK - 100, j * CHUNK - 100); g.fillStyle = DISTRICT_COLOR[t]; g.fillRect(x, y, CHUNK * MS + 0.5, CHUNK * MS + 0.5);
+    }
+    g.strokeStyle = 'rgba(60,60,60,.55)'; g.lineWidth = 1;
+    for (let k = -24; k <= 25; k++) { const v = (k * CHUNK - 100 + HALF_WORLD) * MS; g.beginPath(); g.moveTo(v, 0); g.lineTo(v, c.height); g.moveTo(0, v); g.lineTo(c.width, v); g.stroke(); }
+    const [tx, ty] = w2m(TOWN.x0, TOWN.z0); g.fillStyle = '#ffd54f'; g.fillRect(tx, ty, (TOWN.x1 - TOWN.x0) * MS, (TOWN.z1 - TOWN.z0) * MS);
+    g.font = 'bold 13px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#111';
+    g.fillText('🏙 小鎮（柏熙酒店・遊樂場）', w2m(0, 0)[0], w2m(0, -320)[1]);
+    LANDMARKS.forEach(l => { const [x, y] = w2m(l.i * CHUNK, l.j * CHUNK); g.fillText(l.name, x, y + 4); });
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(8, c.height - 26, 120, 18); g.fillStyle = '#fff'; g.font = '11px sans-serif'; g.textAlign = 'left';
+    g.fillRect(14, c.height - 14, 1000 * MS, 3); g.fillText('1 公里', 14 + 1000 * MS + 6, c.height - 11);
+    return c;
+  }
+  function drawMap() {
+    if (!mapBase) mapBase = drawMapBase();
+    mg.drawImage(mapBase, 0, 0);
+    for (const r of remotes.values()) { if (!r.st) continue; const [x, y] = w2m(r.pos.x, r.pos.z); mg.fillStyle = '#2196f3'; mg.beginPath(); mg.arc(x, y, 5, 0, 7); mg.fill(); }
+    const [px, py] = w2m(P.pos.x, P.pos.z);
+    mg.save(); mg.translate(px, py); mg.rotate(-P.face + Math.PI); mg.fillStyle = '#fff'; mg.strokeStyle = '#d32f2f'; mg.lineWidth = 2;
+    mg.beginPath(); mg.moveTo(0, -9); mg.lineTo(6, 7); mg.lineTo(0, 3); mg.lineTo(-6, 7); mg.closePath(); mg.fill(); mg.stroke(); mg.restore();
+    const t = district(Math.round(P.pos.x / CHUNK), Math.round(P.pos.z / CHUNK));
+    $('mapInfo').textContent = `你而家喺：${DISTRICT_NAME[t] || '野外'}（${Math.round(P.pos.x)}, ${Math.round(P.pos.z)}）`;
+  }
+  let mapTimer = null;
+  function openMap() { $('mapModal').classList.remove('hidden'); drawMap(); clearInterval(mapTimer); mapTimer = setInterval(drawMap, 500); sfx.click(); }
+  function closeMap() { $('mapModal').classList.add('hidden'); clearInterval(mapTimer); }
+  $('btnMap').onclick = openMap; $('mapClose').onclick = closeMap;
+  addEventListener('keydown', e => { if (e.code === 'KeyM' && e.target.tagName !== 'INPUT') ($('mapModal').classList.contains('hidden') ? openMap() : closeMap()); });
+  mapCv.addEventListener('pointerdown', e => {
+    const r = mapCv.getBoundingClientRect();
+    let x = (e.clientX - r.left) / r.width * HALF_WORLD * 2 - HALF_WORLD, z = (e.clientY - r.top) / r.height * HALF_WORLD * 2 - HALF_WORLD;
+    x = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, x)); z = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, z));
+    const inTownXZ = x > TOWN.x0 && x < TOWN.x1 && z > TOWN.z0 && z < TOWN.z1;
+    if (inTownXZ) { x = SPAWN.x; z = SPAWN.z; }
+    else {
+      // 傳送去最近嘅馬路（唔會卡喺大廈入面）
+      const rx = Math.round((x + 100) / CHUNK) * CHUNK - 100, rz = Math.round((z + 100) / CHUNK) * CHUNK - 100;
+      if (Math.abs(x - rx) < Math.abs(z - rz)) x = rx; else z = rz;
+    }
+    if (P.seat) leaveRide();
+    P.camper = -1; api.teleport(x, 0.1, z); city.loadAll(P.pos); closeMap();
+    sfx.whoosh(); toast(`✨ 傳送咗去 ${inTownXZ ? '小鎮' : DISTRICT_NAME[district(Math.round(x / CHUNK), Math.round(z / CHUNK))] || '野外'}`);
+  });
+
+  if (location.search.includes('debug')) window.__g = { P, park, hotel, campers, city, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
@@ -705,6 +766,7 @@ function startGame(myName) {
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);
+    city.update(P.pos);
     bikeOn = P.bike && !isIndoors();
     const speed = (bikeOn ? 22 : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
