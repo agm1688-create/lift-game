@@ -12,7 +12,13 @@ export const ARENA = { x0: -2100, x1: -1300, z0: -500, z1: 300 }; // 打怪獸�
 export const VILLAGE = { x0: -1100, x1: -300, z0: 300, z1: 900 }; // 豪景花園式屋苑
 export const RIVER = { x0: -900, x1: 300, z0: -900, z1: -300 };   // 城市河（觀光船）
 export const LOHAS = { x0: 4300, x1: 4900, z0: 2300, z1: 2900 };   // 日出康城（地圖最右面）
-export const EXCL = [TOWN, AIRPORT, ARENA, VILLAGE, RIVER, LOHAS];
+export const HARBOUR = { x0: 500, x1: 3900, z0: 2700, z1: 2900 }; // 海港（要經海底隧道過海）
+export const TUNNELS = [
+  { x: 1100, n: '西區海底隧道', en: 'Western Harbour Crossing' },
+  { x: 2100, n: '紅磡海底隧道', en: 'Cross-Harbour Tunnel' },
+  { x: 3300, n: '東區海底隧道', en: 'Eastern Harbour Crossing' },
+];
+export const EXCL = [TOWN, AIRPORT, ARENA, VILLAGE, RIVER, LOHAS, HARBOUR];
 const NEAR = 1, FAR = 4, M = 94;                                 // 近區半徑、遠區半徑、區內可用半闊
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...extra });
 
@@ -45,6 +51,7 @@ export function district(i, j) {
   if (inRect(VILLAGE, i, j)) return 'village';
   if (inRect(RIVER, i, j)) return 'river';
   if (inRect(LOHAS, i, j)) return 'lohas';
+  if (inRect(HARBOUR, i, j)) return 'harbour';
   const lm = lmAt(i, j); if (lm) return lm.type;
   const d = Math.hypot(i, j) * CHUNK, n = vnoise(i * 0.18, j * 0.18, 1), n2 = vnoise(i * 0.35 + 50, j * 0.35 - 20, 2);
   if (d < 1600) return n > 0.3 ? 'city' : n2 > 0.5 ? 'park' : 'res';
@@ -53,8 +60,8 @@ export function district(i, j) {
   if (n > 0.6) return 'forest';
   return n2 > 0.45 ? 'farm' : n2 > 0.25 ? 'res' : 'forest';
 }
-export const DISTRICT_COLOR = { river: '#4fc3f7', lohas: '#ce93d8', village: '#a1887f', school: '#ff8a65', airport: '#b0bec5', arena: '#7e57c2', city: '#8a9bb0', res: '#e8c9a0', park: '#7cc47c', forest: '#2e7d32', farm: '#d4c26a', lake: '#4aa3df', stadium: '#e57373', town: '#ffd54f', none: '#335' };
-export const DISTRICT_NAME = { river: '城市河', lohas: '日出康城', village: '豪景花園（屋苑）', school: '學校', airport: '機場', arena: '打怪獸場', city: '市中心', res: '住宅區', park: '公園', forest: '森林', farm: '農田', lake: '湖', stadium: '大球場', town: '小鎮', none: '' };
+export const DISTRICT_COLOR = { harbour: '#4aa3df', river: '#4fc3f7', lohas: '#ce93d8', village: '#a1887f', school: '#ff8a65', airport: '#b0bec5', arena: '#7e57c2', city: '#8a9bb0', res: '#e8c9a0', park: '#7cc47c', forest: '#2e7d32', farm: '#d4c26a', lake: '#4aa3df', stadium: '#e57373', town: '#ffd54f', none: '#335' };
+export const DISTRICT_NAME = { harbour: '海港', river: '城市河', lohas: '日出康城', village: '豪景花園（屋苑）', school: '學校', airport: '機場', arena: '打怪獸場', city: '市中心', res: '住宅區', park: '公園', forest: '森林', farm: '農田', lake: '湖', stadium: '大球場', town: '小鎮', none: '' };
 
 // ---------- 材質 ----------
 function facadeTex(wall, win, frame, cellW = 64, cellH = 56, ww = 0.6, wh = 0.55) {
@@ -320,7 +327,7 @@ export function buildCity(scene, grid) {
       // 排隊建
       queue = [];
       for (let di = -FAR; di <= FAR; di++) for (let dj = -FAR; dj <= FAR; dj++) {
-        const i = ci + di, j = cj + dj, t = district(i, j); if (t === 'none' || t === 'town' || t === 'airport' || t === 'arena' || t === 'village' || t === 'river' || t === 'lohas') continue;
+        const i = ci + di, j = cj + dj, t = district(i, j); if (t === 'none' || t === 'town' || t === 'airport' || t === 'arena' || t === 'village' || t === 'river' || t === 'lohas' || t === 'harbour') continue;
         const ring = Math.max(Math.abs(di), Math.abs(dj)), c = get(i, j);
         if (ring <= NEAR && !c.near) queue.push({ c, near: true, d: ring - 10 });
         else if (c.far === null) queue.push({ c, near: false, d: Math.hypot(di, dj) });

@@ -297,6 +297,24 @@ export function buildWorld(scene, api) {
     cabins.push(c);
   }
   updaters.push((dt, t) => cabins.forEach((c, i) => { const p = pathPt(t * 0.03 + i / cabins.length * Math.PI * 2); c.position.copy(p); }));
+  // 纜車站（湖南面）：搭 Lift 上月台，纜車經過就上得 / 落得
+  const CABLE_S = Math.PI / 2, deckY = 10.4;
+  const bx = (x0, y0, z0, x1, y1, z1, m, col = true) => { mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), m, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); if (col) addCol(x0, y0, z0, x1, y1, z1); };
+  const stConc = std('#e0e0e0'), stRail = std('#8d6e63', { metalness: 0.4 }), stGold = std('#d4af37', { metalness: 0.7, roughness: 0.3 });
+  bx(47, deckY - 0.4, -41.6, 63, deckY, -37.6, stConc);
+  [[47.3, -41.3], [62.7, -41.3], [47.3, -37.9], [62.7, -37.9]].forEach(([x, z]) => bx(x - 0.3, 0, z - 0.3, x + 0.3, deckY - 0.4, z + 0.3, stConc));
+  bx(47, deckY, -37.6, 63, deckY + 1.1, -37.4, stRail); bx(46.8, deckY, -41.6, 47, deckY + 1.1, -37.4, stRail); bx(63, deckY, -41.6, 63.2, deckY + 1.1, -37.4, stRail);
+  bx(47, deckY, -41.7, 52.5, deckY + 1.1, -41.5, stRail); bx(57.5, deckY, -41.7, 63, deckY + 1.1, -41.5, stRail);
+  bx(46.5, deckY + 3, -41.8, 63.5, deckY + 3.2, -37.2, stGold, false);
+  [[47.2, -37.6], [62.8, -37.6]].forEach(([x, z]) => bx(x - 0.1, deckY, z - 0.1, x + 0.1, deckY + 3, z + 0.1, stGold, false));
+  bx(63.4, 0, -41, 66.6, deckY + 3.2, -38, std('#b0bec5', { metalness: 0.3 }));
+  const csg = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.9), new THREE.MeshBasicMaterial({ map: T.signTex('🚡 金色纜車站 CABLE CAR', '#5a1a0e', '#ffd77a', 512, 80, 'bold 40px sans-serif'), side: THREE.DoubleSide }));
+  csg.position.set(55, deckY + 2.5, -37.35); scene.add(csg);
+  const csg2 = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.7), csg.material); csg2.position.set(65, 3, -37.95); scene.add(csg2);
+  const cable = { cabins, pathPt, S: CABLE_S, speed: 0.03, plat: new THREE.Vector3(55, deckY + 0.05, -39.4), lift: new THREE.Vector3(61.5, deckY + 0.05, -39.4), ground: new THREE.Vector3(65, 0.05, -36.4) };
+  inter([65, 0, -36.6], 2, () => '🚡 搭 Lift 上纜車站', () => api.cableLift(true));
+  inter([61.8, deckY, -39.4], 1.6, () => '⬇ 搭 Lift 落地面', () => api.cableLift(false));
+  inter([55, deckY, -40], 3.5, () => api.cableLabel(), () => api.cableBoard());
 
   // ---------- 樹、街燈 ----------
   const treeTrunk = std('#6d4c2f'), treeLeaf = std('#2e7d32');
@@ -430,6 +448,6 @@ export function buildWorld(scene, api) {
     setToiletLight(on) { toiletLightOn = on; setToiletLight(on); },
     toiletBounds: { x0: TX0, x1: TX1, z0: TZ0, z1: TZ1, y1: TH },
     alarm(sec = 5) { alarmUntil = performance.now() + sec * 1000; },
-    pillarX,
+    pillarX, cable,
   };
 }

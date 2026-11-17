@@ -74,7 +74,20 @@ export function buildTransitModel(id) {
 // ===== 路線：沿 200 米一格嘅馬路網行 =====
 const CH = 200, line = v => Math.round((v + 100) / CH) * CH - 100;
 function snap(x, z) { const rx = line(x), rz = line(z); return Math.abs(x - rx) < Math.abs(z - rz) ? { x: rx, z, v: true } : { x, z: rz, v: false }; }
+// 過海要經海底隧道（3 條）
+const HB = { x0: 500, x1: 3900, zN: 2690, zS: 2910 }, TUN_X = [1100, 2100, 3300];
 export function planRoute(from, to, town) {
+  const sideF = from.z < 2800, sideT = to.z < 2800;
+  const crosses = sideF !== sideT && ((from.x > HB.x0 - 120 && from.x < HB.x1 + 120) || (to.x > HB.x0 - 120 && to.x < HB.x1 + 120) || (Math.min(from.x, to.x) < HB.x0 && Math.max(from.x, to.x) > HB.x1));
+  if (!crosses) return planRoute0(from, to, town);
+  const mx = (from.x + to.x) / 2, tx = TUN_X.reduce((a, b) => Math.abs(b - mx) < Math.abs(a - mx) ? b : a);
+  const a = { x: tx, z: sideF ? HB.zN : HB.zS }, b = { x: tx, z: sideF ? HB.zS : HB.zN };
+  const R1 = planRoute0(from, a, town), R2 = planRoute0(b, to, town);
+  const pts = R1.pts.concat(R2.pts);
+  const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+  return { pts, cum, L: cum[cum.length - 1], tunnel: [R1.L - 1, R1.L + Math.abs(HB.zS - HB.zN) + 1], tunnelX: tx };
+}
+function planRoute0(from, to, town) {
   const pts = [new V3(from.x, 0, from.z)];
   const push = (x, z) => { const l = pts[pts.length - 1]; if (Math.hypot(l.x - x, l.z - z) > 0.5) pts.push(new V3(x, 0, z)); };
   const inTown = p => p.x > town.x0 && p.x < town.x1 && p.z > town.z0 && p.z < town.z1;

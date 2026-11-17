@@ -1,4 +1,4 @@
-// 上課時間：每玩 15 分鐘，自動傳送去學校課室上數學堂（香港小學二年級：兩位數加數 / 減數）
+// 上課時間：每玩 10 分鐘，自動傳送去學校課室上數學堂（香港小學二年級：兩位數加數 / 減數）
 // 答啱 2 條就可以返去上一刻嘅位置；唔揀 / 唔答，就要等 20 分鐘先返得去玩
 import * as THREE from 'three';
 import { Batch } from './city.js';
@@ -7,7 +7,7 @@ import { buildAvatar } from './avatar.js';
 import { numWords } from './english.js';
 
 export const CLASSROOM = { x: 6600, z: 300 };
-export const PLAY_SEC = 15 * 60, WAIT_SEC = 20 * 60, NEED = 2;
+export const PLAY_SEC = 10 * 60, WAIT_SEC = 20 * 60, NEED = 2;
 const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, ...e });
 const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -98,7 +98,7 @@ export function buildSchool(scene, api) {
     modal.style.display = 'flex';
     const wait = `<div class="wait">⏳ 唔揀 / 唔答都得，但要等 <b id="schWait">${fmt(left())}</b> 先可以返去玩</div>`;
     if (!L.op) {
-      modal.innerHTML = `<div class="sbox"><h2>🔔 上課時間！</h2><div class="sub">你玩咗 15 分鐘，老師叫你返學校上數學堂。<br>揀一樣做，答啱 <b>${NEED} 條</b>就可以即刻返去頭先嘅位置繼續玩！</div>
+      modal.innerHTML = `<div class="sbox"><h2>🔔 上課時間！</h2><div class="sub">你玩咗 10 分鐘，老師叫你返學校上數學堂。<br>揀一樣做，答啱 <b>${NEED} 條</b>就可以即刻返去頭先嘅位置繼續玩！</div>
         <div class="pick"><button data-op="+">➕ 加數</button><button data-op="-" class="sub2">➖ 減數</button></div>${wait}</div>`;
       modal.querySelectorAll('[data-op]').forEach(btn => btn.onclick = () => { api.sfx.click(); L.op = btn.dataset.op; L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`); render(); askQ(L.q); });
       return;

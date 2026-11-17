@@ -14,7 +14,7 @@ export const SHOP_LAYOUT = [
   { key: 'restaurant', type: 'chinese', cx: 0, w: 18, colors: ['#b3121b', '#f5c242'], sign: '大八坊酒樓', act: '🥢 睇餐牌點菜' },
   { key: 'parknshop', type: 'market', cx: 18, w: 15, colors: ['#e60012', '#0055a5'], sign: '百佳 PARKnSHOP', act: '🛒 入去購物' },
   { key: 'wellcome', type: 'market', cx: 34.5, w: 15, colors: ['#e2231a', '#ffd400'], sign: '惠康 Wellcome', act: '🛒 入去購物' },
-  { key: 'bank', type: 'bank', cx: 50, w: 12, colors: ['#0b4f8a', '#d4af37'], sign: '金條銀行 GOLD BANK', act: '🏦 銀行櫃位' },
+  { key: 'bank', type: 'bank', cx: 50, w: 12, colors: ['#0b4f8a', '#d4af37'], sign: '柏熙銀行 PAK HEI BANK', act: '🏦 銀行櫃位' },
 ];
 
 function menuBoardTex(title, items, bg, fg, accent) {
@@ -88,7 +88,7 @@ export function buildShops(scene, api, SHOPS = {}) {
     const data = SHOPS[S.key] || {};
     const colors = (data.colors && data.colors.length >= 2 ? data.colors : S.colors).map(c => c.toLowerCase());
     const [c1, c2] = colors;
-    const name = S.type === 'bank' ? '金條銀行' : (data.name || S.sign.split(' ')[0]);
+    const name = S.type === 'bank' ? '柏熙銀行' : (data.name || S.sign.split(' ')[0]);
     const signText = S.sign;
     const items = data.items || [];
     const x0 = S.cx - S.w / 2, x1 = S.cx + S.w / 2, cx = S.cx;

@@ -182,6 +182,7 @@ export function buildApartments(scene, api) {
   function liftMenu(info, fromLobby) {
     const opts = [];
     if (!fromLobby) opts.push({ label: '🅖 地下大堂（出返街）', fn: () => { api.sfx.door(); api.blackout(() => { const b = info.back; cur = null; api.teleport(b[0], 0.05, b[2]); api.face(Math.PI); api.sfx.ding(); api.toast(`🛎 ${info.name} 地下大堂`); }, 1300); } });
+    opts.push({ label: '⚙️ Lift 頂電梯機房', sub: '入去睇電梯零件，學英文名', fn: () => { const back = cur ? [X, 0.05, Z - 3.6] : info.back; const keep = cur; api.machineRoom?.(`${info.name}`, () => { if (keep) { cur = keep; drawFloorSign(info.name, keep.floor); } api.teleport(back[0], back[1] ?? 0.05, back[2]); }); } });
     for (let f = 1; f <= info.lv; f++) opts.push({ label: `${f} 樓`, on: cur && cur.floor === f && !fromLobby, fn: () => goFloor(info, f) });
     api.choose(`🛗 ${info.name} Lift（地下 – ${info.lv} 樓）`, opts, fromLobby ? '揀你想去邊層。每層有 A–H 共 8 個單位，全部入得。' : `而家喺 ${cur.floor} 樓`, 92);
   }

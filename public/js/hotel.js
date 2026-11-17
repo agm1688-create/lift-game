@@ -316,6 +316,11 @@ export function buildHotel(scene, api) {
   // 樓梯出口小屋
   R.box(6, 0, -15.9, 6.2, 3, -2, M.wall2); R.box(13, 0, -15.9, 13.2, 3, -2, M.wall2); R.box(6, 3, -15.9, 13.2, 3.2, -2, M.gold);
   R.box(6, 0, -2, 7.2, 3, -1.8, M.wall2); R.box(11.8, 0, -2, 13.2, 3, -1.8, M.wall2);
+  // 電梯機房（Lift 頂）：入去睇零件、學英文
+  R.box(18, 0, -14, 28, 3.4, -13.8, M.wall2); R.box(18, 0, -14, 18.2, 3.4, -4, M.wall2); R.box(27.8, 0, -14, 28, 3.4, -4, M.wall2);
+  R.box(18, 0, -4.2, 21.8, 3.4, -4, M.wall2); R.box(24.2, 0, -4.2, 28, 3.4, -4, M.wall2); R.box(18, 3.4, -14, 28, 3.6, -4, M.gold);
+  R.box(21.8, 0, -4.15, 24.2, 2.6, -4.05, M.gold, false);
+  R.sign(23, 3.0, -3.9, 4, 0.7, signMat('⚙️ 電梯機房', '#37474f', '#ffd600', 512, 96, 'bold 56px sans-serif'), '+z');
   // 停機坪
   const hp = new THREE.CircleGeometry(8, 40); hp.rotateX(-Math.PI / 2); hp.translate(-16, 0.02, 4); R.geo(hp, new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.8 }));
   R.sign(-16, 0.03, 4, 6, 6, signMat('H', '#2b2f36', '#ffd54f', 256, 256, 'bold 220px sans-serif'), '+z');
@@ -323,6 +328,7 @@ export function buildHotel(scene, api) {
   for (let i = -7; i <= 7; i++) { R.box(i * 4.2 - 0.3, 1.2, 15.95, i * 4.2 + 0.3, 6 + (7 - Math.abs(i)) * 0.5, 16.25, M.gold, false); R.sph(i * 4.2, 6.8 + (7 - Math.abs(i)) * 0.5, 16.1, 0.7, M.gold); }
   R.box(-31, 7, 15.95, 31, 7.6, 16.25, M.gold, false);
   const roofItems = R.emit(root, [NF * FH], colliders);
+  inter(23, NF * FH, -2.6, 2, () => '⚙️ 打開電梯機房（睇零件學英文）', () => api.machineRoom?.('柏熙酒店', () => api.teleport(HX + 23, NF * FH + 0.1, HZ - 2)));
   // 天台嘅樓梯門要可以行出去：門楣頂唔使碰撞（喺 3m 以上）
   // 大招牌（由廣場都見到）
   const bigSign = new THREE.Mesh(new THREE.PlaneGeometry(34, 6.5), signMat('柏 熙 酒 店', '#5a1a0e', '#ffd77a', 1024, 196, 'bold 150px serif'));

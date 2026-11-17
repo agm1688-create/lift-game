@@ -17,7 +17,7 @@ function pickVoice() {
     || en.find(v => /google (uk|us) english/i.test(v.name)) || en.find(v => /en[-_](GB|US)/i.test(v.lang)) || en[0] || null;
 }
 export function initEnglish(s) {
-  store = s; enabled = s.get('eng', true);
+  store = s; enabled = s.get('eng2', true);   // 預設開；要密碼先關得
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   sub = document.createElement('div'); sub.id = 'engSub'; document.body.appendChild(sub);
   if (synth()) { pickVoice(); synth().onvoiceschanged = pickVoice; }
@@ -25,7 +25,7 @@ export function initEnglish(s) {
 // 撳「開始」嗰下要喺使用者手勢入面行一次，手機先肯出聲
 export function unlockSpeech() { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth()?.speak(u); } catch { } }
 export const englishOn = () => enabled;
-export function setEnglish(on) { enabled = on; store?.set('eng', on); if (!on) { queue.length = 0; synth()?.cancel(); speaking = false; showSub(null); } }
+export function setEnglish(on) { enabled = on; store?.set('eng2', on); if (!on) { queue.length = 0; synth()?.cancel(); speaking = false; showSub(null); } }
 
 function showSub(item) {
   if (!sub) return;

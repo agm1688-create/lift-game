@@ -24,8 +24,9 @@ export const ENTR = {};
     if (OVERRIDE[k]) { [x, z, yaw] = OVERRIDE[k]; }
     else {
       const rx = lineOf(x), rz = lineOf(z);
-      if (Math.abs(x - rx) < Math.abs(z - rz)) { const sd = x < rx ? -1 : 1; x = rx + sd * 9.5; yaw = sd < 0 ? Math.PI / 2 : -Math.PI / 2; }
-      else { const sd = z < rz ? -1 : 1; z = rz + sd * 9.5; yaw = sd < 0 ? 0 : Math.PI; }
+      const inEx = (px, pz) => EXCL.some(r => px > r.x0 - 2 && px < r.x1 + 2 && pz > r.z0 - 2 && pz < r.z1 + 2);
+      if (Math.abs(x - rx) < Math.abs(z - rz)) { let sd = x < rx ? -1 : 1; if (inEx(rx + sd * 9.5, z)) sd = -sd; x = rx + sd * 9.5; yaw = sd < 0 ? Math.PI / 2 : -Math.PI / 2; }
+      else { let sd = z < rz ? -1 : 1; if (inEx(x, rz + sd * 9.5)) sd = -sd; z = rz + sd * 9.5; yaw = sd < 0 ? 0 : Math.PI; }
       // 唔好同其他站入口太近，亦唔好喺路口中間
       for (let n = 0; n < 12; n++) {
         const along = Math.abs(Math.sin(yaw)) > 0.5 ? 'z' : 'x';
