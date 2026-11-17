@@ -20,6 +20,7 @@ import { HKG } from './hkg_data.js';
 import { PETS, PET_CATS, petIndex, buildPet, animatePet } from './pets.js';
 import { buildVault } from './vault.js';
 import { buildApartments } from './apartments.js';
+import { buildSchool } from './school.js';
 import { TRANSIT, transitIndex, buildTransitModel, planRoute, routeAt, buildTransitStand } from './transit.js';
 import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA } from './city.js';
 
@@ -143,8 +144,19 @@ function startGame(myName) {
   const apartments = buildApartments(scene, api);
   api.transitPick = id => transitPick(id);
   const stand = buildTransitStand(scene, api);
+  // 每玩 15 分鐘返學校上數學堂
+  api.store = store;
+  api.prepare = () => {
+    const wasAir = !!P.flight || P.pos.y > 150;
+    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
+    if (P.camper >= 0) { P.camper = -1; P.rideObj = null; }
+    closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    return [+P.pos.x.toFixed(2), wasAir ? 0.1 : +(P.pos.y + 0.05).toFixed(2), +P.pos.z.toFixed(2)];
+  };
+  const school = buildSchool(scene, api);
+  setTimeout(() => school.resume(), 0);
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders);
   const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
@@ -678,7 +690,7 @@ function startGame(myName) {
   function updateHUD(inCar) {
     const a = P.pos.y;
     const inHotel = hotel.inside(P.pos);
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.camper >= 0 ? campers.list[P.camper].name : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
@@ -788,7 +800,7 @@ function startGame(myName) {
   function isIndoors() {
     const p = P.pos, tb = world.toiletBounds;
     if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1) return true;
-    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p)) return true;
+    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p)) return true;
     if (p.x > tb.x0 && p.x < tb.x1 && p.z > tb.z0 && p.z < tb.z1 && p.y < tb.y1) return true;
     if (p.z > 36 && p.z < 48 && p.x > -46 && p.x < 56.5 && p.y < 4.5) return true;   // 商店街
     if (p.x > -26 && p.x < -10 && p.z > -18 && p.z < -6 && p.y < 4) return true;   // 寵物店 / 獸醫
@@ -1179,7 +1191,7 @@ function startGame(myName) {
     } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
   }
 
-  if (location.search.includes('debug')) window.__g = { pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  if (location.search.includes('debug')) window.__g = { school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
@@ -1197,6 +1209,7 @@ function startGame(myName) {
     let ix = joy.x, iy = joy.y;
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
+    if (school.active()) { ix = iy = 0; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);
@@ -1206,7 +1219,7 @@ function startGame(myName) {
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     let turn = 0;
     if (mv.lengthSq() > 0.01) { const tf = Math.atan2(mv.x, mv.z); let df = tf - P.face; df = Math.atan2(Math.sin(df), Math.cos(df)); turn = df; P.face += df * Math.min(1, dt * (bikeOn ? 7 : 14)); }
-    airport.update(P.pos); village.update(P.pos); vault.update(P.pos); apartments.update(P.pos);
+    airport.update(P.pos); village.update(P.pos); vault.update(P.pos); apartments.update(P.pos); school.update(dt, P.pos);
     if (P.transit) transitStep(dt);
     else if (P.pass) passStep(dt);
     else if (P.flight) {
