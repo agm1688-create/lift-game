@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Batch } from './city.js';
 import { IM, signMat, sign } from './interiors.js';
 import { buildAvatar } from './avatar.js';
+import { numWords } from './english.js';
 
 export const CLASSROOM = { x: 6600, z: 300 };
 export const PLAY_SEC = 15 * 60, WAIT_SEC = 20 * 60, NEED = 2;
@@ -99,7 +100,7 @@ export function buildSchool(scene, api) {
     if (!L.op) {
       modal.innerHTML = `<div class="sbox"><h2>🔔 上課時間！</h2><div class="sub">你玩咗 15 分鐘，老師叫你返學校上數學堂。<br>揀一樣做，答啱 <b>${NEED} 條</b>就可以即刻返去頭先嘅位置繼續玩！</div>
         <div class="pick"><button data-op="+">➕ 加數</button><button data-op="-" class="sub2">➖ 減數</button></div>${wait}</div>`;
-      modal.querySelectorAll('[data-op]').forEach(btn => btn.onclick = () => { api.sfx.click(); L.op = btn.dataset.op; L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`); render(); });
+      modal.querySelectorAll('[data-op]').forEach(btn => btn.onclick = () => { api.sfx.click(); L.op = btn.dataset.op; L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`); render(); askQ(L.q); });
       return;
     }
     const q = L.q;
@@ -112,6 +113,8 @@ export function buildSchool(scene, api) {
       ${wait}</div>`;
     modal.querySelectorAll('[data-n]').forEach(btn => btn.onclick = () => key(btn.dataset.n));
   }
+  const qEn = q => `What is ${numWords(q.a)} ${q.op === '+' ? 'plus' : 'minus'} ${numWords(q.b)}?`;
+  const askQ = q => api.say?.(qEn(q), `${q.a} ${q.op} ${q.b} 等於幾多？`, { force: true });
   function key(k) {
     const L = S.lesson; if (!L || !L.q) return;
     api.sfx.click();
@@ -124,13 +127,15 @@ export function buildSchool(scene, api) {
       const q = L.q;
       if (+input === q.ans) {
         L.correct++; api.sfx.pickup();
-        if (L.correct >= NEED) { save(); return finish(true); }
+        if (L.correct >= NEED) { save(); api.say?.('Excellent! You got them all right. Class is over. Goodbye!', '好叻！全部答啱，落堂喇，拜拜！', { force: true }); return finish(true); }
         L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`);
+        api.say?.(`Well done! That is correct. Next question: ${qEn(L.q)}`, `啱咗，好叻！下一條：${L.q.a} ${L.q.op} ${L.q.b}`, { force: true });
         return render(`✅ 啱咗！${q.a} ${q.op} ${q.b} = ${q.ans}。再答多 ${NEED - L.correct} 條！`, true);
       }
       api.sfx.error();
       const tip = q.op === '+' ? '提示：先加個位，夠 10 就要進位 1 去十位。' : '提示：先減個位，唔夠減就要向十位借 1（即係借 10）。';
       L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`);
+      api.say?.(`Oops! ${numWords(q.a)} ${q.op === '+' ? 'plus' : 'minus'} ${numWords(q.b)} is ${numWords(q.ans)}. Let us try another one: ${qEn(L.q)}`, `唔啱喎，答案係 ${q.ans}。試下呢條。`, { force: true });
       return render(`❌ 唔啱喎，${q.a} ${q.op} ${q.b} = ${q.ans}。${tip} 試下呢條：`, false);
     }
   }
@@ -146,6 +151,7 @@ export function buildSchool(scene, api) {
     const back = api.prepare();                     // 落車 / 落機，記低而家位置
     S.lesson = { start: Date.now(), back, op: null, correct: 0, q: null }; S.played = 0; save();
     api.sfx.ding(); api.toast('🔔 叮噹～上課時間！', 3000);
+    api.say?.('Ding dong! Good morning, class! It is time for maths. Do you want to do addition or subtraction?', '叮噹！同學早晨！上數學堂喇，想做加數定減數？', { force: true });
     api.blackout(() => { api.teleport(X - 2.4, 0.05, Z + 0.8); api.face(Math.PI); drawBoard('上課啦！揀加數定減數？'); render(); }, 900);
   }
   function finish(passed) {
@@ -167,6 +173,7 @@ export function buildSchool(scene, api) {
       hint.textContent = `📚 上緊數學堂（答啱 ${S.lesson.correct}/${NEED}）`;
       return;
     }
+    if (api.blocked && api.blocked()) { hint.textContent = ''; return; }
     S.played += dt;
     const rem = PLAY_SEC - S.played;
     hint.textContent = `📚 ${fmt(Math.max(0, rem))} 後上數學堂`;

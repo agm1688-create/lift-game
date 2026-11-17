@@ -22,7 +22,17 @@ import { buildVault } from './vault.js';
 import { buildApartments } from './apartments.js';
 import { buildSchool } from './school.js';
 import { TRANSIT, transitIndex, buildTransitModel, planRoute, routeAt, buildTransitStand } from './transit.js';
-import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA } from './city.js';
+import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA, RIVER, LOHAS } from './city.js';
+import { buildTraffic } from './traffic.js';
+import { buildEvents } from './events.js';
+import { buildJail } from './jail.js';
+import { buildNightLock } from './nightlock.js';
+import { buildRiver, SEATS as BOAT_SEATS, buildBoat, PATH as BOAT_PATH } from './river.js';
+import { buildMTR, ENTR as MTR_ENTR } from './mtr.js';
+import { ST as MTR_ST, LINES as MTR_LINES } from './mtr_data.js';
+import { buildSkytrain, SKY_PATH, SKY_STATIONS } from './skytrain.js';
+import { buildLohas } from './lohas.js';
+import { initEnglish, unlockSpeech, say, setEnglish, englishOn, VEH, ITEM, PET_EN, numWords, article } from './english.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -34,6 +44,7 @@ const V3 = THREE.Vector3;
 
 // ================= 開始畫面：角色設計 =================
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
+initEnglish(store);
 const look = Object.assign({ gender: 'm', skin: SKINS[1], hat: 'gold', shirt: SHIRTS[1] }, store.get('look', {}));
 $('name').value = store.get('name', '') || '';
 
@@ -69,7 +80,7 @@ rebuildPreview();
 $('go').onclick = () => {
   const name = ($('name').value.trim() || '玩家' + Math.floor(Math.random() * 1000)).slice(0, 16);
   store.set('look', look); store.set('name', name);
-  initAudio();
+  initAudio(); unlockSpeech();
   if (isTouch) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => { });
   pv.run = false; pv.r.dispose();
   $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
@@ -104,9 +115,9 @@ function startGame(myName) {
   const api = {
     teleport: (x, y, z) => { P.pos.set(x, y, z); P.vy = 0; P.fallFrom = y; },
     alarm: () => { net.send({ t: 'ev', kind: 'alarm' }); doAlarm(); },
-    pickup: (kind, obj) => { obj.visible = false; P.inv.add(kind); setHeld(kind); sfx.pickup(); renderInv(); toast({ ext: '🧯 拎咗滅火筒（撳互動掣噴）', phone: '📱 拎咗手機', router: '📶 拎咗 Router' }[kind]); },
-    silver: () => { E.silver = (E.silver || 0) + 1; saveEcon(); sfx.pickup(); toast(`🥈 銀條 +1（共 ${E.silver} 條）— 可以拎去銀行賣`); },
-    gold: () => { P.gold++; saveEcon(); sfx.pickup(); toast(`🥇 金條 +1（共 ${P.gold} 條）— 可以拎去銀行存或者賣`); },
+    pickup: (kind, obj) => { obj.visible = false; P.inv.add(kind); setHeld(kind); sfx.pickup(); renderInv(); if (ITEM[kind]) say(...ITEM[kind]); toast({ ext: '🧯 拎咗滅火筒（撳互動掣噴）', phone: '📱 拎咗手機', router: '📶 拎咗 Router' }[kind]); },
+    silver: () => { E.silver = (E.silver || 0) + 1; saveEcon(); sfx.pickup(); say(...ITEM.silver, { gap: 60000 }); toast(`🥈 銀條 +1（共 ${E.silver} 條）— 可以拎去銀行賣`); },
+    gold: () => { P.gold++; saveEcon(); sfx.pickup(); say(...ITEM.gold, { gap: 60000 }); toast(`🥇 金條 +1（共 ${P.gold} 條）— 可以拎去銀行存或者賣`); },
     toiletLight: () => toiletLight,
     setToiletLight: on => { setToiletLight(on); net.send({ t: 'world', toiletLight: on }); sfx.click(); },
     hasDog: () => !!P.pet,
@@ -116,7 +127,7 @@ function startGame(myName) {
     liftSpeed: i => { const L = lifts.lifts[i]; return L ? Math.sign(L.vy) : 0; },
     keyPrompt, liftCmd: (id, cmd, floor) => net.send({ t: 'lift', id, cmd, floor }),
     now: () => net.now(), playerY: () => P.pos.y,
-    arrived: id => { const L = lifts.lifts[id]; if (Math.abs(P.pos.y - L.y) < 40) sfx.ding(); },
+    arrived: id => { const L = lifts.lifts[id]; if (Math.abs(P.pos.y - L.y) < 40) { sfx.ding(); if (lifts.insideCar(P.pos) === L) say(`Ding! This is floor ${numWords(Math.max(1, Math.round(L.floor)))}. The doors are opening.`, `叮！${floorLabel(Math.round(L.floor))} 樓到喇，開門喇。`, { force: true }); } },
   };
   api.openShop = (key, name, colors) => openShop(key, name, colors);
   api.openBank = name => openBank(name);
@@ -148,16 +159,33 @@ function startGame(myName) {
   api.store = store;
   api.prepare = () => {
     const wasAir = !!P.flight || P.pos.y > 150;
-    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
-    if (P.camper >= 0) { P.camper = -1; P.rideObj = null; }
+    leaveAll();
     closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     return [+P.pos.x.toFixed(2), wasAir ? 0.1 : +(P.pos.y + 0.05).toFixed(2), +P.pos.z.toFixed(2)];
   };
   const school = buildSchool(scene, api);
   setTimeout(() => school.resume(), 0);
+  // ===== 新功能：英文聽力、監倉、城市河、地鐵、空中輕軌、日出康城、夜晚鎖 =====
+  api.say = say; api.isTouch = isTouch;
+  api.pay = n => { if (E.cash < n) return false; E.cash = Math.round((E.cash - n) * 10) / 10; saveEcon(); return true; };
+  api.reward = n => { E.cash = Math.round((E.cash + n) * 10) / 10; saveEcon(); };
+  api.busy = () => !!(P.seat || P.flight || P.mech || P.transit || P.pass || P.boat || P.shuttle || sky.riding() || mtr.riding());
+  api.loadCity = () => city.loadAll(P.pos);
+  api.blocked = () => jail.active() || nightLock.locked();
+  api.boatTicket = () => boatTicket();
+  api.shuttle = (k, to) => shuttle(k, to);
+  api.spraying = () => P.spraying; api.pos = () => P.pos;
+  const nightLock = buildNightLock({ store, sfx, toast: (m, ms) => toast(m, ms), onLock: () => { stowBike(); say('It is late at night. Time to go to bed! Good night!', '夜喇，夠鐘瞓覺喇！早唞！', { force: true }); } });
+  const jail = buildJail(scene, api);
+  const river = buildRiver(scene, api);
+  const mtr = buildMTR(scene, api);
+  const sky = buildSkytrain(scene, api);
+  const lohas = buildLohas(scene, api);
+  const shuttleStand = buildShuttleStand();
+  setTimeout(() => jail.resume(), 0);
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders, jail.colliders, river.colliders, mtr.colliders, sky.colliders, lohas.colliders, shuttleStand.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables, river.interactables, mtr.interactables, sky.interactables, lohas.interactables, shuttleStand.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
   const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
@@ -175,6 +203,9 @@ function startGame(myName) {
   gridAdd(staticCols);
   // 大地圖（10 公里 × 10 公里，分區載入）
   const city = buildCity(scene, { add: gridAdd, remove: gridRemove });
+  api.city = city;
+  const traffic = buildTraffic(scene, api);
+  const events = buildEvents(scene, api);
   let colStamp = 0;
   function nearCols(x, z, r, withBig = true) {
     colStamp++; const out = withBig ? bigCols.slice() : [];
@@ -230,6 +261,8 @@ function startGame(myName) {
     $('shopName').textContent = `${data.name || name}${data.en ? ' ' + data.en : ''}`;
     if (!(data.items || []).length) { toast('呢間舖暫時未有貨品資料'); return; }
     renderShop(); $('shopModal').classList.remove('hidden'); sfx.click();
+    if (/parknshop|wellcome|market/.test(key)) say('Hello! Welcome to the supermarket. What would you like to buy today?', '你好！歡迎光臨超級市場，今日想買啲咩？', { key: 'shop' + key });
+    else say('Hello! Welcome. What would you like to eat? Our burgers and drinks are very nice.', '你好！歡迎光臨，想食啲咩？', { key: 'shop' + key });
   }
   function renderShop() {
     const items = CATALOG.SHOPS[shopKey].items;
@@ -268,6 +301,7 @@ function startGame(myName) {
     for (const [n, { it, q }] of cart) { const b = E.bag[n] || { e: it.e, c: 0, shop: shopKey, cat: it.cat }; b.c += q; E.bag[n] = b; count += q; }
     cart.clear(); saveEcon(); sfx.pickup(); renderCart();
     toast(`🧾 多謝惠顧！共 ${count} 件，${money(total)}，已放入🎒背包`, 3000);
+    say(`That will be ${numWords(Math.round(total))} dollars, please. Thank you very much! Have a nice day!`, `一共 ${money(total)}，多謝惠顧！祝你有美好嘅一日！`, { force: true });
   };
   $('shopClose').onclick = () => closeModal('shopModal');
 
@@ -284,6 +318,7 @@ function startGame(myName) {
       d.querySelector('button').onclick = () => {
         b.c--; if (b.c <= 0) delete E.bag[n]; saveEcon(); sfx.pickup();
         toast(use === '用' ? `🧻 用咗 ${n}` : use === '飲' ? `🥤 飲咗 ${n}，好解渴！` : `😋 食咗 ${n}，好味！`); renderBag();
+        say(use === '用' ? 'All clean now!' : use === '飲' ? 'Ahh! This drink is so refreshing.' : 'Yummy! This is delicious.', use === '用' ? '乾淨晒！' : use === '飲' ? '好解渴！' : '好好味！', { gap: 8000 });
       };
       el.appendChild(d);
     });
@@ -321,6 +356,7 @@ function startGame(myName) {
   $('bankClose').onclick = () => closeModal('bankModal');
   // 櫃位職員：揀服務
   function bankTeller(name) {
+    say('Good morning! How can I help you today? Would you like to take out money, or open your safe deposit box?', '早晨！今日有咩可以幫到你？想提錢，定係打開保險箱？', { force: true });
     choose(`🙋 ${name}職員：你好！請問今日要咩服務？`, [
       { label: '💵 提錢 / 存錢', sub: '現金戶口：提款、存款；亦可以喺度賣金條、銀條', fn: () => openBank(name) },
       { label: '🔐 打開保險箱', sub: '職員帶你入金庫，親眼睇住你嘅保險箱，放入金條或者銀條（唔可以放現金）', fn: () => enterVault() },
@@ -337,6 +373,7 @@ function startGame(myName) {
   function enterVault() {
     vaultBack = P.pos.clone(); vault.setContents(E.vault, E.vaultS || 0);
     toast('👩‍💼 職員：請跟我嚟，金庫喺地庫，要過兩道閘…', 2200); sfx.door();
+    say('Please follow me. This is the safe deposit box room. You can keep gold bars and silver bars here, but not cash.', '請跟我嚟。呢度係保險箱室，可以放金條同銀條，但唔可以放現金。', { force: true });
     blackout(() => { api.teleport(vault.entry.x, vault.entry.y, vault.entry.z); P.face = Math.PI; camYaw = 0; toast('🔐 你入咗金庫。行去中間張枱就可以打開你嘅保險箱', 3500); }, 900);
   }
   function leaveVault() {
@@ -385,8 +422,9 @@ function startGame(myName) {
     if (P.pet) opts.push({ label: `🔙 送 ${PETS[petIndex(P.pet)].n} 返寵物店`, sub: '之後可以再揀過另一隻', fn: () => { const n = PETS[petIndex(P.pet)].n; setMyPet(null); toast(`🐾 ${n}返咗寵物店`); } });
     for (const [cat, title] of PET_CATS) {
       opts.push({ head: title });
-      PETS.filter(p => p.cat === cat).forEach(p => opts.push({ label: `${p.e} ${p.n}`, on: P.pet === p.id, fn: () => { setMyPet(p.id); sfx.bark(); toast(`${p.e} 你領養咗${p.n}！佢會跟住你`, 3000); } }));
+      PETS.filter(p => p.cat === cat).forEach(p => opts.push({ label: `${p.e} ${p.n}`, sub: PET_EN[p.id] || '', on: P.pet === p.id, fn: () => { setMyPet(p.id); sfx.bark(); toast(`${p.e} 你領養咗${p.n}！佢會跟住你`, 3000); say(`This is ${article(PET_EN[p.id] || 'pet')}. Please take good care of it!`, `呢隻係${p.n}，要好好照顧佢呀！`, { force: true }); } }));
     }
+    say('Welcome to the pet shop! Which animal would you like to adopt?', '歡迎嚟到寵物店！你想領養邊隻動物？');
     choose('🐾 寵物店：揀一隻寵物', opts, `狗有 ${PETS.filter(p => p.cat === 'dog').length} 個品種，仲有貓、獅子、老虎、大猩猩、大笨象等等。一次養一隻，跟住你周圍行。`, 150);
   }
   { const saved = store.get('pet', ''); if (saved && petIndex(saved) >= 0) setTimeout(() => setMyPet(saved), 0); }
@@ -450,6 +488,7 @@ function startGame(myName) {
       if (!(f >= 1 && f <= MAX_FLOOR)) { sfx.error(); toast('請輸入 1 – 10000 樓'); return; }
       if (isMoving(L.state, net.now())) { toast('電梯行緊，等陣先'); return; }
       api.liftCmd(L.id, 'goto', f); lpInput = '';
+      say(`Going ${f > L.floor ? 'up' : 'down'} to floor ${numWords(f)}.`, `${f > L.floor ? '上' : '落'}去 ${f} 樓。`, { force: true });
       toast(f > 1000 ? `🚀 出發去 ${f} 樓 — 大氣層 / 太空站！` : f > 100 ? `☁️ 出發去 ${f} 樓 — 上天空！` : `🛗 去 ${f} 樓`);
     }
     else if (k === 'mr') { if (isMoving(L.state, net.now())) return toast('電梯行緊'); api.liftCmd(L.id, 'goto', 0); toast('⚙️ 落電梯機房'); }
@@ -539,7 +578,10 @@ function startGame(myName) {
   cv.addEventListener('wheel', e => { camDist = Math.min(40, Math.max(1.5, camDist * (1 + Math.sign(e.deltaY) * 0.1))); $('zoomRange').value = camDist; e.preventDefault(); }, { passive: false });
   $('jump').addEventListener('pointerdown', e => { jump(); e.preventDefault(); });
   $('act').addEventListener('pointerdown', e => { doAct(); e.preventDefault(); });
-  function jump() { if (P.flight) return; if (P.seat) return leaveRide(); if (P.grounded) { P.vy = P.mech ? 16 : 8; P.grounded = false; P.ride = -1; P.rideObj = null; } }
+  function jump() {
+    if (P.flight || P.transit || P.boat || P.shuttle || sky.riding()) return; if (P.seat) return leaveRide();
+    if (P.mech) { P.vy = Math.min(26, Math.max(P.vy, 0) + 13); P.grounded = false; P.ride = -1; P.rideObj = null; P.mech.jetT = 0.6; sfx.jet(); return; }
+    if (P.grounded) { P.vy = P.mech ? 16 : 8; P.grounded = false; P.ride = -1; P.rideObj = null; } }
 
   // ---------- 互動 ----------
   let curInter = null;
@@ -555,6 +597,10 @@ function startGame(myName) {
   }
   function useLabel() { return { ext: '🧯 噴滅火筒', phone: '📱 開手機', router: P.wifi ? '📶 熄 Wi-Fi' : '📶 開 Wi-Fi' }[P.held]; }
   function doAct() {
+    if (P.boat) return endBoat(true);
+    if (P.shuttle) { P.shuttle.t = P.shuttle.dur; return; }
+    if (sky.riding()) return sky.alight();
+    if (mtr.riding() && !curInter) return mtr.skip();
     if (P.transit) return endTransit(true);
     if (P.pass) return leavePass();
     if (P.flight) return exitFlight();
@@ -611,11 +657,11 @@ function startGame(myName) {
     if (i === 0) p.x -= m; else if (i === 1) p.x += m; else if (i === 2) p.z -= m; else p.z += m;
   }
   function physics(dt, mv, colsOverride) {
-    const cols = colsOverride || nearCols(P.pos.x, P.pos.z, 3).concat(lifts.dynamicColliders(), hotel.dynamicColliders());
+    const cols = colsOverride || nearCols(P.pos.x, P.pos.z, 3).concat(lifts.dynamicColliders(), hotel.dynamicColliders(), traffic.colliders());
     if (P.rideObj) P.pos.y += P.rideObj.y - P.rideObj.prevY;
     P.pos.x += mv.x * dt; P.pos.z += mv.z * dt;
     const prevY = P.pos.y;
-    P.vy -= GRAV * dt;
+    P.vy -= (P.mech ? 12 : GRAV) * dt;
     const term = Math.max(55, P.pos.y * 0.6);
     if (P.vy < -term || (P.pos.y > 150 && P.vy < -10)) P.vy = -term;
     P.pos.y += P.vy * dt;
@@ -671,7 +717,7 @@ function startGame(myName) {
   net.send({ t: 'hello', name: myName, look });
   setInterval(() => {
     const L = P.ride >= 0 ? lifts.lifts[P.ride] : null;
-    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.pet ? petIndex(P.pet) + 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0, bk: bikeOn ? 1 : 0, fl: P.flight ? [AIR_KINDS.indexOf(P.flight.kind), +P.flight.yaw.toFixed(2), +P.flight.pitch.toFixed(2), +P.flight.roll.toFixed(2), P.flight.color] : 0, mk: P.mech ? P.mech.style + 1 : 0, ma: P.mech ? (P.mech.punchT > 0 ? 1 : P.mech.beamT > 0 ? 2 : 0) : 0, cp: P.camper, af: apartments.key(), tr: P.transit ? [transitIndex(P.transit.t.id), +P.transit.yaw.toFixed(2)] : 0, ps: P.pass || 0, lp: P.camper >= 0 ? [+P.lp.x.toFixed(2), +P.lp.y.toFixed(2), +P.lp.z.toFixed(2)] : 0 } });
+    net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.pet ? petIndex(P.pet) + 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0, bk: bikeOn ? 1 : 0, fl: P.flight ? [AIR_KINDS.indexOf(P.flight.kind), +P.flight.yaw.toFixed(2), +P.flight.pitch.toFixed(2), +P.flight.roll.toFixed(2), P.flight.color] : P.shuttle ? [1, +P.shuttle.yaw.toFixed(2), 0, 0, '#ff6f00'] : 0, bt: P.boat ? [+P.face.toFixed(2), P.boat.seat] : 0, sk: sky.riding() ? 1 : 0, mk: P.mech ? P.mech.style + 1 : 0, ma: P.mech ? (P.mech.punchT > 0 ? 1 : P.mech.beamT > 0 ? 2 : 0) : 0, cp: P.camper, af: apartments.key(), tr: P.transit ? [transitIndex(P.transit.t.id), +P.transit.yaw.toFixed(2)] : 0, ps: P.pass || 0, lp: P.camper >= 0 ? [+P.lp.x.toFixed(2), +P.lp.y.toFixed(2), +P.lp.z.toFixed(2)] : 0 } });
   }, 100);
 
   function dogFollow(dog, owner, face, dt) {
@@ -690,7 +736,7 @@ function startGame(myName) {
   function updateHUD(inCar) {
     const a = P.pos.y;
     const inHotel = hotel.inside(P.pos);
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.boat ? `🚢 城市河觀光船（${BOAT_SEATS[P.boat.seat].n}）` : P.shuttle ? `🚁 直通直升機 → ${P.shuttle.name}` : sky.riding() ? '🚝 空中輕軌' : mtr.riding() ? (mtr.rideInfo() ? `🚇 下一站 ${MTR_ST[mtr.rideInfo().to][0]}` : '🚇 港鐵列車') : jail.active() ? '⛓ 監倉' : mtr.inside(P.pos) ? mtr.label() : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
@@ -714,6 +760,7 @@ function startGame(myName) {
     if (P.held) setHeld(P.held);
     P.seat = { r: i, s: free[Math.floor(Math.random() * free.length)] };
     fpBeforeRide = firstPerson; firstPerson = true; camYaw = 0; camPitch = 0; $('btnFP').classList.add('on');
+    say('Hold on tight! Here we go! Wheee!', '坐穩扶好！出發喇！', { gap: 10000 });
     sfx.whoosh(); toast(`🎢 ${r.name}：${r.info || ''}\n（撳「落車」或者「跳」離開；👁 可以轉第三身）`, 4000);
   }
   function leaveRide() {
@@ -760,6 +807,7 @@ function startGame(myName) {
   function openCheckin() {
     $('hmCash').textContent = `💵 你身上有 ${money(E.cash)}` + (E.room ? `｜你而家住緊 ${E.room.no} 號房（${RNAME[E.room.type]}）` : '');
     $('hmMsg').textContent = ''; $('hotelModal').classList.remove('hidden'); sfx.click();
+    say('Welcome to the hotel! Would you like a single room, a double room, or the presidential suite?', '歡迎嚟到酒店！你想要單人房、雙人房，定係總統套房？');
   }
   document.querySelectorAll('#hotelModal [data-room]').forEach(b => b.onclick = () => {
     const type = b.dataset.room, price = PRICES[type];
@@ -780,7 +828,7 @@ function startGame(myName) {
   function doSleep() {
     if (!E.room) { sfx.error(); return toast('🛎 要先去 1 樓大堂接待處 Check-in 先可以瞓喎'); }
     const f = $('flash'); f.style.transition = 'opacity 1s'; f.style.background = '#000'; f.style.opacity = 1;
-    toast('😴 Zzz… Zzz…', 2500);
+    toast('😴 Zzz… Zzz…', 2500); say('Good night! Sweet dreams.', '早唞！發個好夢。', { force: true });
     setTimeout(() => { f.style.opacity = 0; toast('☀️ 瞓醒啦！精神晒～', 2500); setTimeout(() => f.style.background = '', 1100); }, 2600);
   }
 
@@ -791,6 +839,8 @@ function startGame(myName) {
     musicBox.innerHTML = '';
     mOpts.forEach(([label, i]) => { const b = document.createElement('button'); b.textContent = label; if (currentMusic() === i) b.className = 'on'; b.onclick = () => { playMusic(i); store.set('music', i); renderMusic(); $('btnMusic').classList.toggle('on', i > 0); }; musicBox.appendChild(b); });
   }
+  $('btnEng').classList.toggle('on', englishOn());
+  $('btnEng').onclick = () => { const on = !englishOn(); setEnglish(on); $('btnEng').classList.toggle('on', on); sfx.click(); toast(on ? '🔤 英文聽力：開（唔同情景都會講英文，有中文字幕）' : '🔤 英文聽力：關'); if (on) say('Hello! Let us learn English together.', '你好！一齊學英文啦！', { force: true }); };
   $('btnMusic').onclick = () => { musicBox.classList.toggle('hidden'); renderMusic(); sfx.click(); };
   { const m = store.get('music', 1); playMusic(m); $('btnMusic').classList.toggle('on', m > 0); }
 
@@ -799,23 +849,36 @@ function startGame(myName) {
   let bikeOn = false, bikeLean = 0, bikeSpin = 0;
   function isIndoors() {
     const p = P.pos, tb = world.toiletBounds;
-    if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1) return true;
-    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p)) return true;
+    if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1 || P.boat || P.shuttle) return true;
+    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p) || jail.inside(p) || mtr.inside(p) || p.y > 7) return true;
+    if (p.x > 4440 && p.x < 4680 && p.z > 2520 && p.z < 2680 && p.y < 13) return true;   // 康城商場
     if (p.x > tb.x0 && p.x < tb.x1 && p.z > tb.z0 && p.z < tb.z1 && p.y < tb.y1) return true;
     if (p.z > 36 && p.z < 48 && p.x > -46 && p.x < 56.5 && p.y < 4.5) return true;   // 商店街
     if (p.x > -26 && p.x < -10 && p.z > -18 && p.z < -6 && p.y < 4) return true;   // 寵物店 / 獸醫
     return false;
   }
   $('btnBike').onclick = () => {
-    P.bike = !P.bike; sfx.click(); $('btnBike').classList.toggle('on', P.bike);
-    if (P.bike && P.held) setHeld(P.held);
-    toast(P.bike ? (isIndoors() ? '🏍 電單車已準備好 — 出返室外就會自動揸' : '🏍 揸電單車！喺室外快 3 倍') : '🚶 落咗電單車');
+    sfx.click();
+    if (P.bike) { stowBike(); return toast('🅿️ 電單車泊咗喺度，行返嚟撳「揸返」就得'); }
+    const pb = PARK.find(v => v.k === 'bike');
+    if (pb) {
+      const d = Math.hypot(pb.x - P.pos.x, pb.z - P.pos.z);
+      if (d < 12 && Math.abs(pb.y - P.pos.y) < 3) return useParked(pb);
+      return choose('🏍 你架電單車泊咗喺第度', [
+        { label: '🚶 我自己行過去', sub: `喺你${dirName(pb.x - P.pos.x, pb.z - P.pos.z)}面大約 ${Math.round(d)} 米`, fn: () => toast(`🏍 電單車喺你${dirName(pb.x - P.pos.x, pb.z - P.pos.z)}面大約 ${Math.round(d)} 米（地圖上有 🏍 記號）`, 4000) },
+        { label: '🚚 叫拖車送過嚟（$50）', sub: '拖車即刻送到你身邊', fn: () => { if (isIndoors()) return toast('要喺室外先叫到拖車'); if (!api.pay(50)) return toast('💸 唔夠錢叫拖車'); dropParked(pb); if (P.held) setHeld(P.held); P.bike = true; $('btnBike').classList.add('on'); toast('🚚 拖車送咗電單車嚟！'); say('The tow truck brought your motorbike. Here you are!', '拖車將你架電單車送咗嚟！'); } },
+      ], '交通工具泊喺邊度就喺邊度，唔會自己消失');
+    }
+    if (isIndoors()) return toast('🏍 要喺室外先揸得電單車');
+    if (P.held) setHeld(P.held);
+    P.bike = true; $('btnBike').classList.add('on'); toast('🏍 揸電單車！喺室外快 3 倍'); say(...VEH.bike);
   };
   addEventListener('keydown', e => { if (e.code === 'KeyB' && e.target.tagName !== 'INPUT') $('btnBike').click(); });
   function enterCamper(k) {
     const c = campers.list[k];
     P.camper = k; P.lp.set(0.9, 0.85, -1.1); P.vy = 0; P.rideObj = null; P.ride = -1;
     c.toWorld(P.lp, P.pos);
+    say(...VEH.camper);
     sfx.door(); toast(c.moving ? `🚐 跳咗上${c.name.slice(3)}！佢行緊，可以喺入面周圍行` : `🚐 上咗${c.name.slice(3)}，${Math.ceil(c.restLeft)} 秒後開車，會圍住成個小鎮行一圈`, 3500);
   }
 
@@ -869,6 +932,18 @@ function startGame(myName) {
     rectM(RUNWAY, '#3c3f44');
     rectM(VILLAGE, DISTRICT_COLOR.village);
     if (village.sea) polyM(village.sea, 0, 0, '#4aa3df');
+    rectM(RIVER, '#cfd8dc'); rectM({ x0: -840, x1: 240, z0: -840, z1: -360 }, '#4fc3f7'); rectM({ x0: -800, x1: 200, z0: -800, z1: -400 }, '#81c784');
+    rectM(LOHAS, '#e1bee7'); rectM({ x0: 4800, x1: 4894, z0: 2300, z1: 2894 }, '#4aa3df'); rectM({ x0: 4300, x1: 4800, z0: 2830, z1: 2894 }, '#4aa3df');
+    // 空中輕軌（藍色虛線）
+    g.save(); g.strokeStyle = '#0288d1'; g.lineWidth = Math.max(2, 5 * s); g.setLineDash([8, 5]); g.beginPath();
+    SKY_PATH.pts.forEach((q, i) => { const [px, py] = w2m(q.x, q.z); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); g.restore();
+    // 港鐵綫
+    g.lineWidth = Math.max(2.5, 7 * s); g.lineJoin = 'round';
+    MTR_LINES.forEach(l => l.r.forEach(r => { g.strokeStyle = l.c; g.beginPath(); r.forEach((k, i) => { const e = MTR_ENTR[k], [px, py] = w2m(e.x, e.z); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); }));
+    for (const k in MTR_ENTR) { const e = MTR_ENTR[k], [px, py] = w2m(e.x, e.z); if (px < -20 || px > MAP.W + 20 || py < -20 || py > MAP.H + 20) continue; g.fillStyle = '#fff'; g.strokeStyle = '#222'; g.lineWidth = 1.5; g.beginPath(); g.arc(px, py, Math.max(3, Math.min(7, 9 * s)), 0, 7); g.fill(); g.stroke(); }
+    for (const st of SKY_STATIONS) { const [px, py] = w2m(st.x, st.z); g.fillStyle = '#0288d1'; g.fillRect(px - 4, py - 4, 8, 8); }
+    { const pb = PARK.find(v => v.k === 'bike'); if (pb) { const [px, py] = w2m(pb.x, pb.z); g.font = '18px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏍', px, py); } }
+    PARK.filter(v => v.k !== 'bike').forEach(v => { const [px, py] = w2m(v.x, v.z); g.font = '16px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v.k === 'heli' ? '🚁' : '✈', px, py); });
     // 拉近啲就畫埋豪景花園每座樓 + 柏熙酒店
     if (s > 0.25) {
       for (const r of HKG.r) { if (r[1] <= 2.5) continue; g.strokeStyle = r[0] === 'motorway' ? '#ef6c00' : '#666'; g.lineWidth = Math.max(1, r[1] * s); g.beginPath(); for (let i = 0; i < r[3].length; i += 2) { const [px, py] = w2m(r[3][i] + VOX, r[3][i + 1] + VOZ); i ? g.lineTo(px, py) : g.moveTo(px, py); } g.stroke(); }
@@ -883,6 +958,9 @@ function startGame(myName) {
     label('✈ 國際機場', 820, s > 0.25 ? -320 : -90, big);
     label('🏘 豪景花園', VOX, s > 0.25 ? VILLAGE.z0 - 25 : VOZ, big);
     label('⚔ 怪獸決戰場', -1700, -100, big);
+    label('🚢 城市河', -300, -600, big); label('🌅 日出康城', 4600, 2600, big);
+    if (s > 0.12) for (const k in MTR_ENTR) { const e = MTR_ENTR[k]; label(MTR_ST[k][0], e.x, e.z - 16 / s * 0.6, s > 0.5 ? 14 : 11); }
+    if (s > 0.2) for (const st of SKY_STATIONS) label('🚝' + st.n, st.x, st.z + 14 / s * 0.6, 12);
     if (s > 0.6) { label('🏨 柏熙酒店', 55, -125, 15); }
     // 玩家
     for (const r of remotes.values()) { if (!r.st) continue; const [x, y] = w2m(r.pos.x, r.pos.z); g.fillStyle = '#2196f3'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); g.stroke(); }
@@ -941,8 +1019,8 @@ function startGame(myName) {
   ['pointerup', 'pointercancel'].forEach(t => mapCv.addEventListener(t, mptrEnd));
   function mapTeleport(x0, z0) {
     const { x, z, name } = resolveDest(x0, z0);
-    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
-    P.camper = -1; api.teleport(x, 0.1, z); city.loadAll(P.pos); closeMap();
+    leaveAll();
+    api.teleport(x, 0.1, z); city.loadAll(P.pos); closeMap();
     sfx.whoosh(); toast(`✨ 傳送咗去 ${name}`);
   }
   // 地圖上一點 → 實際去到嘅位置（小鎮 / 屋苑 / 機場 / 怪獸場有指定入口；其他去最近嘅馬路）
@@ -954,6 +1032,8 @@ function startGame(myName) {
     else if (inR(VILLAGE)) { x = village.center.x; z = village.center.z; name = '豪景花園'; }
     else if (inR(AIRPORT)) { x = airport.spawn.x; z = airport.spawn.z; name = '國際機場'; }
     else if (inR(ARENA)) { x = arena.gate.x; z = arena.gate.z; name = '怪獸決戰場（閘口）'; }
+    else if (inR(RIVER)) { x = river.pier.x; z = river.pier.z; name = '城市河碼頭'; }
+    else if (inR(LOHAS)) { x = lohas.center.x; z = lohas.center.z; name = '日出康城'; }
     else {
       // 傳送去最近嘅馬路（唔會卡喺大廈入面）
       const rx = Math.round((x + 100) / CHUNK) * CHUNK - 100, rz = Math.round((z + 100) / CHUNK) * CHUNK - 100;
@@ -975,7 +1055,7 @@ function startGame(myName) {
   function startTransit(id, d) {
     const t = TRANSIT[transitIndex(id)];
     if (P.camper >= 0) { P.camper = -1; P.rideObj = null; }
-    P.bike = false; $('btnBike').classList.remove('on');
+    stowBike();
     const R = planRoute(P.pos, d, TOWN);
     if (R.L < 30) return toast('📍 你已經喺附近喇，行過去啦');
     const fare = t.fare(R.L);
@@ -985,6 +1065,7 @@ function startGame(myName) {
     const dur = Math.max(8, Math.min(45, R.L / t.speed / 4));
     P.transit = { t, m, R, d, time: 0, dur, yaw: routeAt(R, 0, m.position) };
     m.rotation.y = P.transit.yaw;
+    say(...VEH[id]);
     sfx.door(); toast(`${t.e} 上咗${t.n}，去 ${d.name}（約 ${(R.L / 1000).toFixed(1)} 公里，車費 ${money(fare)}）。撳「⏩ 即刻到站」可以跳過`, 4000);
   }
   const trTmp = new V3(), trSeat = new V3();
@@ -1016,6 +1097,142 @@ function startGame(myName) {
     choose('🚕 叫車：揀交通工具', TRANSIT.map(t => ({ label: `${t.e} ${t.n}`, sub: t.desc, fn: () => transitPick(t.id) })), '揀完再喺大地圖撳你想去嘅位置，車會沿住馬路送你去。小鎮西面（露營車站旁邊）都有交通總站。');
   };
 
+  // ================= 落晒所有交通工具（傳送 / 上堂 / 坐監之前用）=================
+  function leaveAll() {
+    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
+    if (P.boat) endBoat(false); if (P.shuttle) endShuttle(false); mtr.cancel(); sky.cancel();
+    if (P.camper >= 0) { P.camper = -1; P.rideObj = null; }
+    stowBike();
+  }
+
+  // ================= 泊車：喺邊度落機 / 落車就泊喺邊度，交通工具唔會消失（記住喺呢部機）=================
+  const PARK = store.get('parked', []).filter(v => v && v.k);
+  const savePark = () => store.set('parked', PARK.map(({ k, x, y, z, yaw, c }) => ({ k, x, y, z, yaw, c })));
+  const PARK_LABEL = { plane: '✈ 揸返你架小型飛機', heli: '🚁 揸返你架直升機', jumbo: '🛫 揸返你架巨無霸', fighter: '🛩 揸返你架戰鬥機', bike: '🏍 揸返你架電單車' };
+  function showParked(v) {
+    const m = v.k === 'bike' ? buildBike() : buildAircraft(v.k, v.c || '#e53935');
+    m.position.set(v.x, v.y, v.z); m.rotation.y = v.yaw; scene.add(m);
+    const it = { pos: new V3(v.x, v.y, v.z), r: v.k === 'jumbo' ? 14 : v.k === 'bike' ? 2.4 : 5.5, label: () => PARK_LABEL[v.k], act: () => useParked(v), show: () => !P.flight && !P.bike };
+    interactables.push(it); v._m = m; v._it = it;
+  }
+  function dropParked(v) { if (v._m) scene.remove(v._m); const i = interactables.indexOf(v._it); if (i >= 0) interactables.splice(i, 1); const j = PARK.indexOf(v); if (j >= 0) PARK.splice(j, 1); savePark(); }
+  function parkVeh(v) {
+    if (v.k === 'bike') PARK.filter(o => o.k === 'bike').forEach(dropParked);
+    else { const air = PARK.filter(o => o.k !== 'bike'); if (air.length >= 8) dropParked(air[0]); }
+    Object.assign(v, { x: +v.x.toFixed(2), y: +Math.max(0, v.y).toFixed(2), z: +v.z.toFixed(2), yaw: +v.yaw.toFixed(3) });
+    PARK.push(v); showParked(v); savePark();
+  }
+  function useParked(v) {
+    if (v.k === 'bike') { dropParked(v); if (P.held) setHeld(P.held); P.bike = true; P.face = v.yaw; $('btnBike').classList.add('on'); sfx.click(); toast('🏍 揸返電單車'); say(...VEH.bike); return; }
+    dropParked(v); startFlight(v.k, v.x, v.z, v.yaw, v.c, v.y);
+  }
+  setTimeout(() => PARK.slice().forEach(showParked), 0);
+  let lastBike = null;
+  function stowBike() {
+    if (!P.bike) return;
+    if (lastBike) parkVeh({ k: 'bike', ...lastBike });
+    P.bike = false; lastBike = null; $('btnBike').classList.remove('on');
+  }
+  const dirName = (dx, dz) => ['東', '東南', '南', '西南', '西', '西北', '北', '東北'][((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8];
+
+  // ================= 城市河觀光船 =================
+  function boatTicket() {
+    if (P.boat) return;
+    if (api.busy()) return toast('要先落車 / 落機');
+    say('Welcome to the River Cruise! Where would you like to sit? At the front, in the middle, or at the back?', '歡迎乘搭城市河觀光船！你想坐船頭、中間定船尾？', { force: true });
+    choose('🎫 城市河觀光船：揀座位', BOAT_SEATS.map((st, i) => ({ label: `${st.n}（$${st.price}）`, sub: st.d, fn: () => buyBoat(i) })), `船會圍住城市河行一圈（大約 ${Math.round(BOAT_PATH.L / 12.5 / 60)} 分鐘），沿途有摩天輪、城市塔、燈塔、天際線、寶塔同音樂噴泉，導遊會用英文介紹`);
+  }
+  function buyBoat(i) {
+    const st = BOAT_SEATS[i];
+    if (!api.pay(st.price)) { sfx.error(); return toast(`💸 唔夠錢（船飛 $${st.price}）`, 3000); }
+    stowBike(); sfx.pickup();
+    toast(`🎫 買咗${st.n}位（$${st.price}），上船喇！撳「⏩ 返碼頭」可以提早落船`, 4000);
+    say(`Here is your ticket. Your seat is at ${st.en} of the boat. ${VEH.boat[0]}`, `呢張係你嘅船飛，座位喺${st.n}。${VEH.boat[1]}`, { force: true });
+    blackout(() => { P.boat = { seat: i }; river.startRide(i); }, 700);
+  }
+  function boatStep(dt) {
+    const o = river.step(dt); if (!o) { P.boat = null; return; }
+    P.pos.copy(o.pos); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.face = o.yaw;
+    me.position.copy(o.pos); me.rotation.set(0, o.yaw, 0); me.scale.setScalar(1); sitPose(me, dt, false);
+    if (ptrs.size === 0 && !firstPerson) { let d = o.yaw + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt * 0.8); }
+    if (o.done) endBoat(true);
+  }
+  function endBoat(tp = true) {
+    if (!P.boat) return; river.endRide(); P.boat = null;
+    if (tp) { api.teleport(river.pier.x, 0.1, river.pier.z); toast('🚢 返到碼頭，多謝乘搭！', 3000); say('We are back at the pier. Thank you for joining the river cruise. Goodbye!', '返到碼頭喇，多謝乘搭觀光船，拜拜！', { force: true }); }
+  }
+
+  // ================= 豪景花園 ⇄ 日出康城：直通直升機 / 小巴 =================
+  function buildShuttleStand() {
+    const vc = village.center, inter = [], cols = [];
+    const pad = new V3(vc.x + 46, 0, vc.z - 16), bus = new V3(vc.x - 46, 0, vc.z + 4);
+    const padM = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ map: TXsign('H', '#2b2f36', '#ffd54f') }));
+    padM.rotation.x = -Math.PI / 2; padM.position.set(pad.x, 0.06, pad.z); scene.add(padM);
+    const heli = buildAircraft('heli', '#ff6f00'); heli.position.copy(pad); heli.rotation.y = Math.PI / 2; scene.add(heli);
+    const mb = buildTransitModel('minibus'); mb.position.copy(bus); scene.add(mb);
+    cols.push({ min: [bus.x - 1.1, 0, bus.z - 3], max: [bus.x + 1.1, 2.5, bus.z + 3] });
+    const mkSign = (txt, bg, x, z) => { const s = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.8), new THREE.MeshBasicMaterial({ map: TXsign(txt, bg, '#fff'), side: THREE.DoubleSide })); s.position.set(x, 2.6, z); scene.add(s); const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 8), new THREE.MeshStandardMaterial({ color: '#555' })); p.position.set(x, 1.2, z - 0.02); scene.add(p); };
+    mkSign('🚁 直航日出康城', '#e65100', pad.x - 11, pad.z + 6); mkSign('🚐 直通小巴：日出康城', '#2e7d32', bus.x + 3, bus.z + 5);
+    inter.push({ pos: new V3(pad.x - 10, 0, pad.z), r: 5, label: () => '🚁 搭直通直升機去日出康城（$120）', act: () => shuttle('heli', 'lohas') });
+    inter.push({ pos: new V3(bus.x + 2.6, 0, bus.z), r: 4, label: () => '🚐 搭直通小巴去日出康城（$12）', act: () => shuttle('minibus', 'lohas') });
+    return { interactables: inter, colliders: cols, pad, bus, heli };
+  }
+  function shuttle(kind, to) {
+    if (P.shuttle || P.transit) return toast('你已經喺車上 / 機上');
+    if (P.flight || P.mech || P.seat || P.pass || P.boat) return toast('要先落車 / 落機');
+    const dst = to === 'lohas' ? { pad: lohas.pad, bus: lohas.bus, name: '日出康城', en: 'LOHAS Park' } : { pad: shuttleStand.pad, bus: shuttleStand.bus, name: '豪景花園', en: 'Hong Kong Garden' };
+    stowBike();
+    if (kind === 'minibus') { say(`${VEH.minibus[0]} It goes straight to ${dst.en}.`, `${VEH.minibus[1]}直達${dst.name}。`, { force: true }); return startTransit('minibus', { x: dst.bus.x + 4, z: dst.bus.z, name: dst.name }); }
+    if (!api.pay(120)) { sfx.error(); return toast('💸 唔夠錢（直升機 $120）', 3000); }
+    const from = to === 'lohas' ? shuttleStand.pad : lohas.pad;
+    const m = buildAircraft('heli', '#ff6f00'); scene.add(m); m.position.set(from.x, 0, from.z);
+    const seat = new THREE.Object3D(); seat.position.copy(m.userData.seat); m.add(seat);
+    const dist = Math.hypot(dst.pad.x - from.x, dst.pad.z - from.z);
+    P.shuttle = { m, seat, from: from.clone(), to: dst.pad.clone(), t: 0, dur: Math.max(25, dist / 90 + 18), name: dst.name, en: dst.en, yaw: Math.atan2(dst.pad.x - from.x, dst.pad.z - from.z) };
+    if (to === 'lohas') shuttleStand.heli.visible = false;
+    firstPerson = false; $('btnFP').classList.remove('on'); camPitch = 0.25;
+    sfx.whoosh(); toast(`🚁 直通直升機起飛！去${dst.name}（約 ${Math.round(P.shuttle.dur)} 秒）\n撳「⏩ 即刻到」可以跳過`, 4000);
+    say(`${VEH.heli[0]} We are flying to ${dst.en}. Please fasten your seat belt.`, `${VEH.heli[1]}我哋飛去${dst.name}，請扣好安全帶。`, { force: true });
+  }
+  function shuttleStep(dt) {
+    const S = P.shuttle; S.t += dt;
+    const u = Math.min(1, S.t / S.dur), k = u < 0.15 ? 0 : u > 0.85 ? 1 : (u - 0.15) / 0.7, e = k * k * (3 - 2 * k);
+    const h = 160 * Math.max(0, Math.min(1, S.t / 8, (S.dur - S.t) / 8));
+    S.m.position.set(S.from.x + (S.to.x - S.from.x) * e, h, S.from.z + (S.to.z - S.from.z) * e);
+    S.m.rotation.set(k > 0 && k < 1 ? -0.14 : 0, S.yaw, 0, 'YXZ');
+    if (S.m.userData.rotor) S.m.userData.rotor.rotation.y += dt * 30; if (S.m.userData.tail) S.m.userData.tail.rotation.x += dt * 40;
+    P.pos.copy(S.m.position); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.face = S.yaw;
+    seatWorld(S.seat); me.position.copy(seatP); me.quaternion.copy(seatQ); me.scale.setScalar(1); sitPose(me, dt, false);
+    if (ptrs.size === 0) { let d = S.yaw + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt * 1.2); }
+    if (u >= 1) endShuttle(true);
+  }
+  function endShuttle(arrived) {
+    const S = P.shuttle; if (!S) return; P.shuttle = null; scene.remove(S.m); shuttleStand.heli.visible = true;
+    if (arrived) { api.teleport(S.to.x - 12, 0.1, S.to.z + 3); city.loadAll(P.pos); sfx.ding(); toast(`🚁 到咗${S.name}！`, 3000); say(`We have arrived. Welcome to ${S.en}!`, `到喇！歡迎嚟到${S.name}！`, { force: true }); }
+  }
+
+  // ================= 空中輕軌：坐喺車廂 =================
+  function skyStep(dt) {
+    const o = sky.step(); if (!o) return;
+    P.pos.copy(o.pos); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.face = o.yaw;
+    me.position.copy(o.pos); me.rotation.set(0, o.yaw, 0); me.scale.setScalar(1); sitPose(me, dt, false);
+    if (ptrs.size === 0 && !firstPerson) { let d = o.yaw + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt * 1.2); }
+  }
+
+  // ================= 沖紅燈：罰 $100；唔夠錢就坐監 3 分鐘 =================
+  function redLight() {
+    sfx.siren();
+    if (E.cash >= 100) {
+      E.cash = Math.round((E.cash - 100) * 10) / 10; saveEcon();
+      toast('🚨 沖紅燈！交通警察罰款 $100\n紅燈要停車，綠燈先好行！', 4500);
+      say('You ran a red light! The fine is one hundred dollars. Red means stop!', '你沖紅燈！罰款一百蚊。紅燈即係要停！', { force: true });
+    } else {
+      say('You ran a red light, and you do not have enough money to pay the fine. You must go to jail for three minutes!', '你沖紅燈，又唔夠錢交罰款，要坐監三分鐘！', { force: true });
+      jail.arrest(180, '🚦 沖紅燈，又唔夠錢交 $100 罰款');
+    }
+  }
+  api.onRelease = () => say('You are free now. Remember: red means stop, green means go!', '你可以走喇。記住：紅燈停，綠燈行！', { force: true });
+
   // ================= 搭順風車：坐其他玩家架電單車 / 飛機（每架最多載 1 個人）=================
   const VEH_NAME = s => s.bk ? '電單車尾座' : s.fl ? ({ plane: '小型飛機', heli: '直升機', jumbo: '巨無霸', fighter: '戰鬥機' }[AIR_KINDS[s.fl[0]]] || '飛機') + '後座' : '';
   function riderTaken(id) { for (const r of remotes.values()) if (r.st && r.st.ps === id && r.id !== id) return true; return false; }
@@ -1029,7 +1246,7 @@ function startGame(myName) {
     }
     if (!best) return null;
     const r = best;
-    return { label: () => `🙋 坐 ${r.name} 嘅${VEH_NAME(r.st)}`, act: () => { if (riderTaken(r.id)) return toast('😅 呢架車已經載咗 1 個人，坐唔落喇'); P.pass = r.id; P.bike = false; $('btnBike').classList.remove('on'); sfx.door(); toast(`🙋 你坐咗 ${r.name} 嘅${VEH_NAME(r.st)}！撳「🚪 落車」就落`, 3500); } };
+    return { label: () => `🙋 坐 ${r.name} 嘅${VEH_NAME(r.st)}`, act: () => { if (riderTaken(r.id)) return toast('😅 呢架車已經載咗 1 個人，坐唔落喇'); P.pass = r.id; stowBike(); sfx.door(); toast(`🙋 你坐咗 ${r.name} 嘅${VEH_NAME(r.st)}！撳「🚪 落車」就落`, 3500); } };
   }
   function leavePass() {
     const r = remotes.get(P.pass); P.pass = 0;
@@ -1058,10 +1275,11 @@ function startGame(myName) {
   const holdBtn = (id, on) => { const b = $(id); const set = v => e => { on(v); e.preventDefault(); }; b.addEventListener('pointerdown', set(true)); ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, set(false))); };
   holdBtn('flUp', v => flUp = v); holdBtn('flDown', v => flDown = v);
   $('flExit').onclick = () => exitFlight();
-  function startFlight(kind, x, z, yaw, color) {
-    if (P.seat) leaveRide(); if (P.mech) mechOff(); P.camper = -1;
+  function startFlight(kind, x, z, yaw, color, y = 0) {
+    if (P.seat) leaveRide(); if (P.mech) mechOff(); P.camper = -1; stowBike();
     if (P.held) setHeld(P.held);
-    const F = new Flight(kind, x, z, yaw); F.color = color;
+    const F = new Flight(kind, x, z, yaw); F.color = color; F.pos.y = y || 0;
+    say(...VEH[kind]);
     F.model = buildAircraft(kind, color); scene.add(F.model);
     F.seat = new THREE.Object3D(); F.seat.position.copy(F.model.userData.seat); F.model.add(F.seat);
     P.flight = F; firstPerson = false; $('btnFP').classList.remove('on'); camPitch = 0.2; camYaw = yaw + Math.PI;
@@ -1069,16 +1287,18 @@ function startGame(myName) {
     const vt = { plane: 100, jumbo: 220, fighter: 230 }[kind];
     toast(kind !== 'heli' ? `✈ 撳住右下角「⬆」加油門，去到 ${vt} km/h 再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降` : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n只可以喺公路、機場或者停機坪降落', 6000);
   }
-  function endFlight() { const F = P.flight; if (!F) return; scene.remove(F.model); P.flight = null; $('flightPanel').classList.add('hidden'); $('rbtn').classList.remove('hidden'); me.rotation.set(0, P.face, 0); me.userData.body.position.y = 0; }
+  function endFlight(noPark) {
+    const F = P.flight; if (!F) return; scene.remove(F.model);
+    if (!noPark) parkVeh({ k: F.kind, x: F.pos.x, y: F.ground ? F.pos.y : 0, z: F.pos.z, yaw: F.yaw, c: F.color }); P.flight = null; $('flightPanel').classList.add('hidden'); $('rbtn').classList.remove('hidden'); me.rotation.set(0, P.face, 0); me.userData.body.position.y = 0; }
   function exitFlight() {
     const F = P.flight; if (!F) return;
     if (!(F.ground && F.speed < 3)) return toast('要停喺地面先落得機');
     const side = new V3(Math.cos(F.yaw), 0, -Math.sin(F.yaw));
     const p = F.pos.clone().addScaledVector(side, { plane: 6.5, heli: 3.5, jumbo: 12, fighter: 4.5 }[F.kind]);
-    endFlight(); api.teleport(p.x, p.y + 0.1, p.z); sfx.door(); toast('🚶 落咗機');
+    endFlight(); api.teleport(p.x, p.y + 0.1, p.z); sfx.door(); toast('🚶 落咗機。架機泊咗喺度，下次行返嚟撳「揸返」就得', 3500);
   }
   function crashFlight() {
-    endFlight();
+    endFlight(true);
     sfx.boom(); shake = 1.2; const f = $('flash'); f.style.transition = 'none'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transition = 'opacity 1.5s'; f.style.opacity = 0; });
     api.teleport(airport.spawn.x, 0.1, airport.spawn.z); city.loadAll(P.pos);
     toast('💥 墜機！（純屬遊戲）你返咗去機場，可以再租過架', 4000);
@@ -1087,9 +1307,9 @@ function startGame(myName) {
     for (const c of nearCols(p.x, p.z, 8, false)) {
       if (c.max[1] < 0.6) continue;
       const r = P.flight && P.flight.kind === 'jumbo' ? 5 : 3.2;
-      if (p.x > c.min[0] - r && p.x < c.max[0] + r && p.z > c.min[2] - r && p.z < c.max[2] + r && p.y + 2.5 > c.min[1] && p.y + 0.4 < c.max[1]) return true;
+      if (p.x > c.min[0] - r && p.x < c.max[0] + r && p.z > c.min[2] - r && p.z < c.max[2] + r && p.y + 2.5 > c.min[1] && p.y + 0.4 < c.max[1]) return c;
     }
-    return false;
+    return null;
   }
 
   // ================= 機甲 + 怪獸 =================
@@ -1108,18 +1328,43 @@ function startGame(myName) {
   }
   $('mechClose').onclick = () => $('mechModal').classList.add('hidden');
   function toMech(style = 0) {
-    if (P.held) setHeld(P.held); P.bike = false; $('btnBike').classList.remove('on');
-    if (myMech.userData.style !== style) { scene.remove(myMech); myMech = buildMech(style); scene.add(myMech); }
-    P.mech = { hp: 300, punchT: 0, beamT: 0, beamCd: 0, style, since: performance.now() };
+    if (P.held) setHeld(P.held); stowBike();
+    if (myMech.userData.style !== style) { scene.remove(myMech); myMech = buildMech(style); scene.add(myMech); attachJets(); }
+    P.mech = { hp: 300, punchT: 0, beamT: 0, beamCd: 0, style, since: performance.now(), shield: false, dash: null, iframe: 0, dashCd: 0, jetT: 0 };
+    say(...VEH.mech);
     api.teleport(arena.gate.x, 0.1, arena.gate.z); P.face = -Math.PI / 2; camYaw = Math.PI / 2; camPitch = 0.25; firstPerson = false; $('btnFP').classList.remove('on');
     $('mechPanel').classList.remove('hidden'); $('fightHud').classList.remove('hidden');
-    sfx.whoosh(); shake = 0.6; toast(`🤖 ${MECHS[style].name} 變身完成！` + '搵怪獸打：👊 出拳（近身）、⚡ 光炮（遠距離）\n行出東面大閘就會變返人', 5000);
+    sfx.whoosh(); shake = 0.6; toast(`🤖 ${MECHS[style].name} 變身完成！` + '👊 出拳、⚡ 光炮、🛡 盾牌（擋 80% 傷害）\n快速撳兩下 ◀ / ▶ = 極速閃避；撳「跳」= 噴射飛起（可以一直撳）', 6000);
   }
   function mechOff(msg) {
-    if (!P.mech) return; P.mech = null; myMech.visible = false; arena.fireBeam(null, null, false);
+    if (!P.mech) return; P.mech = null; myMech.visible = false; shieldMesh.visible = false; arena.fireBeam(null, null, false); $('mkShield').classList.remove('on');
     $('mechPanel').classList.add('hidden'); $('fightHud').classList.add('hidden');
     api.teleport(arena.base.x, 0.1, arena.base.z); toast(msg || '🙂 變返人');
   }
+  // 盾牌（擋 80% 傷害）、極速閃避、噴射
+  const shieldMesh = new THREE.Group();
+  { const m = new THREE.Mesh(new THREE.CircleGeometry(11, 6), new THREE.MeshBasicMaterial({ color: '#40c4ff', transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide })); shieldMesh.add(m);
+    const e = new THREE.Mesh(new THREE.RingGeometry(10.4, 11, 6), new THREE.MeshBasicMaterial({ color: '#b3e5fc', transparent: true, opacity: 0.85, side: THREE.DoubleSide })); shieldMesh.add(e); }
+  shieldMesh.visible = false; scene.add(shieldMesh);
+  const jetMat = new THREE.MeshBasicMaterial({ color: '#ff9100', transparent: true, opacity: 0.85, depthWrite: false });
+  const jets = [-2.2, 2.2].map(x => { const c = new THREE.Mesh(new THREE.ConeGeometry(1.3, 7, 12), jetMat); c.rotation.x = Math.PI; c.position.set(x, -3, 0); c.visible = false; return c; });
+  function attachJets() { jets.forEach(j => myMech.add(j)); }
+  attachJets();
+  function toggleShield(on) { if (!P.mech) return; P.mech.shield = on ?? !P.mech.shield; $('mkShield').classList.toggle('on', P.mech.shield); sfx.click(); if (P.mech.shield) say('Shield up!', '盾牌！', { gap: 20000 }); }
+  function mechDash(side) {
+    const M = P.mech; if (!M || M.dashCd > 0) return;
+    const r = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw)).multiplyScalar(side * 115);
+    M.dash = { vx: r.x, vz: r.z, t: 0.32 }; M.iframe = performance.now() + 700; M.dashCd = 0.55;
+    sfx.whoosh(); shake = Math.max(shake, 0.3);
+    say(side < 0 ? 'Dash to the left!' : 'Dash to the right!', side < 0 ? '極速向左閃！' : '極速向右閃！', { gap: 15000 });
+  }
+  const tapT = {};
+  addEventListener('keydown', e => {
+    if (!P.mech || e.repeat || e.target.tagName === 'INPUT') return;
+    const side = (e.code === 'ArrowLeft' || e.code === 'KeyA') ? -1 : (e.code === 'ArrowRight' || e.code === 'KeyD') ? 1 : 0;
+    if (side) { const now = performance.now(); if (now - (tapT[side] || 0) < 300) { mechDash(side); tapT[side] = 0; } else tapT[side] = now; }
+    if (e.code === 'KeyQ') toggleShield();
+  });
   function monDist() { return monSt ? Math.hypot(arena.mon.pos.x - P.pos.x, arena.mon.pos.z - P.pos.z) : 1e9; }
   function mechPunch() {
     const M = P.mech; if (!M || M.punchT > 0) return;
@@ -1147,12 +1392,16 @@ function startGame(myName) {
     el.style.left = (45 + Math.random() * 10) + '%'; document.body.appendChild(el); setTimeout(() => el.remove(), 1000);
   }
   function hitFx() { const f = $('flash'); f.style.transition = 'none'; f.style.background = 'radial-gradient(rgba(255,255,255,.6),transparent 60%)'; f.style.opacity = 0.7; requestAnimationFrame(() => { f.style.transition = 'opacity .4s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 450); }); }
-  $('mkPunch').onclick = () => mechPunch(); $('mkBeam').onclick = () => mechBeam(); $('mkOff').onclick = () => { if (P.mech && performance.now() - P.mech.since > 1500) mechOff(); };
+  $('mkPunch').onclick = () => mechPunch(); $('mkBeam').onclick = () => mechBeam();
+  $('mkShield').onclick = () => toggleShield(); $('mkDashL').onclick = () => mechDash(-1); $('mkDashR').onclick = () => mechDash(1); $('mkOff').onclick = () => { if (P.mech && performance.now() - P.mech.since > 1500) mechOff(); };
   addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.code === 'KeyF') mechPunch(); if (e.code === 'KeyR') mechBeam(); });
   function mechUpdate(dt, moving) {
     const M = P.mech;
     if (!inStage(P.pos)) return mechOff('🙂 行出咗決戰場，變返人');
-    M.punchT -= dt; M.beamT -= dt; M.beamCd -= dt;
+    M.punchT -= dt; M.beamT -= dt; M.beamCd -= dt; M.dashCd -= dt; M.jetT -= dt;
+    if (P.pos.y > 140 && P.vy > 0) P.vy = 0;
+    shieldMesh.visible = M.shield; if (M.shield) { shieldMesh.position.set(P.pos.x + Math.sin(P.face) * 7, P.pos.y + 16, P.pos.z + Math.cos(P.face) * 7); shieldMesh.rotation.set(0, P.face, 0); }
+    jets.forEach(j => { j.visible = M.jetT > 0 || (!P.grounded && P.vy > 0); j.scale.y = 0.7 + Math.random() * 0.6; });
     if (monSt && monSt.s !== 'dead') { const dx = P.pos.x - arena.mon.pos.x, dz = P.pos.z - arena.mon.pos.z, d = Math.hypot(dx, dz); if (d < 28 && d > 0.01) { P.pos.x += dx / d * (28 - d); P.pos.z += dz / d * (28 - d); } }
     myMech.position.copy(P.pos); myMech.rotation.set(0, P.face, 0);
     animateMech(myMech, moving, dt, Math.max(0, M.punchT), Math.max(0, M.beamT));
@@ -1168,7 +1417,10 @@ function startGame(myName) {
       setTimeout(() => {
         if (!P.mech) return; const range = m.a === 'swipe' ? 75 : 240;
         if (monDist() > range) return;
-        P.mech.hp -= m.dmg; shake = 1; sfx.boom();
+        if (P.mech.iframe > performance.now()) { toast('💨 閃避成功！怪獸打唔中你', 1500); say('You dodged it! Great job!', '閃避成功！好嘢！', { gap: 20000 }); return; }
+        const dmg = P.mech.shield ? Math.max(1, Math.round(m.dmg * 0.2)) : m.dmg;
+        P.mech.hp -= dmg; shake = P.mech.shield ? 0.4 : 1; sfx.boom();
+        if (P.mech.shield) { toast(`🛡 盾牌擋咗 80%！只係 -${dmg}`, 1300); if (P.mech.hp > 0) return; }
         const f = $('flash'); f.style.transition = 'none'; f.style.background = 'rgba(255,0,0,.45)'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transition = 'opacity .6s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 650); });
         toast(m.a === 'swipe' ? `💢 俾怪獸掃中！-${m.dmg}` : `🔥 俾怪獸光線射中！-${m.dmg}`, 1200);
         if (P.mech.hp <= 0) mechOff('💥 機甲俾怪獸打爆咗！（純屬遊戲）再入基地變身過啦');
@@ -1191,12 +1443,12 @@ function startGame(myName) {
     } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
   }
 
-  if (location.search.includes('debug')) window.__g = { school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  if (location.search.includes('debug')) window.__g = { traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
   const ray = new THREE.Raycaster();
-  let elapsed = 0;
+  let elapsed = 0, honkT = 1;
   function loop() { requestAnimationFrame(loop); frame(); }
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); elapsed += dt;
@@ -1209,25 +1461,38 @@ function startGame(myName) {
     let ix = joy.x, iy = joy.y;
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
-    if (school.active()) { ix = iy = 0; }
+    if (school.active() || nightLock.locked()) { ix = iy = 0; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);
     city.update(P.pos);
-    bikeOn = P.bike && !isIndoors();
+    // 入室內 / 上其他車：電單車自動泊喺最後喺室外嘅位置（唔會消失）
+    { const nowBike = P.bike && !isIndoors() && !P.boat && !P.shuttle && !sky.riding();
+      if (P.bike && !nowBike && bikeOn) { stowBike(); toast('🅿️ 電單車泊咗喺門口，出返嚟就可以再揸', 2500); }
+      bikeOn = nowBike; if (bikeOn) lastBike = { x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.face }; }
     const speed = P.mech ? 16 : (bikeOn ? 22 : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
+    if (P.mech && P.mech.dash && P.mech.dash.t > 0) { mv.x += P.mech.dash.vx; mv.z += P.mech.dash.vz; P.mech.dash.t -= dt; }
     let turn = 0;
     if (mv.lengthSq() > 0.01) { const tf = Math.atan2(mv.x, mv.z); let df = tf - P.face; df = Math.atan2(Math.sin(df), Math.cos(df)); turn = df; P.face += df * Math.min(1, dt * (bikeOn ? 7 : 14)); }
     airport.update(P.pos); village.update(P.pos); vault.update(P.pos); apartments.update(P.pos); school.update(dt, P.pos);
-    if (P.transit) transitStep(dt);
+    jail.update(dt, P.pos); river.update(dt, T, P.pos); mtr.update(dt, P.pos); sky.update(dt, P.pos); lohas.update(P.pos);
+    const mtrInfo = mtr.step(dt);
+    if (P.boat) boatStep(dt);
+    else if (P.shuttle) shuttleStep(dt);
+    else if (sky.riding()) skyStep(dt);
+    else if (P.transit) transitStep(dt);
     else if (P.pass) passStep(dt);
     else if (P.flight) {
       // 揸緊飛機 / 直升機
       const F = P.flight;
       const ev = F.step(dt, { x: ix, y: iy, up: keys.Space || flUp, down: keys.KeyC || keys.ShiftLeft || flDown, camYaw }, flightHit);
       if (ev === 'crash') crashFlight();
-      else if (ev && ev !== P.flight._lastEv) { if (ev === 'offroad') toast('🛑 飛機只可以喺公路或者機場升降 / 滑行'); else if (ev === 'noland') toast('🚁 呢度唔可以降落：要喺公路、機場或者停機坪'); }
+      else if (ev && ev !== P.flight._lastEv) {
+        const msg = { offroad: '🛑 呢度唔係公路 / 機場：唔會爆，但只可以慢慢滑行，返去公路先起飛得', noland: '🚁 呢度唔可以降落：要喺公路、機場或者停機坪', bump: '💥 撞到嘢！飛機彈開咗（唔會爆）', hard: '🛬 砰！硬著陸，不過飛機冇事', soft: '🛬 安全降落咗（唔喺公路，要慢慢滑行返公路先起飛）', roof: '🏢 停咗喺天台，冇事' }[ev];
+        if (msg) toast(msg, 3000);
+        if (ev === 'bump') { sfx.boom(); shake = 0.6; say('Bump! Be careful. The plane is OK.', '撞到嘢！小心啲，飛機冇事。', { gap: 15000 }); }
+      }
       if (P.flight) {
         P.flight._lastEv = ev;
         const m = F.model; m.position.copy(F.pos); m.rotation.set(-F.pitch, F.yaw, -F.roll, 'YXZ');
@@ -1271,6 +1536,11 @@ function startGame(myName) {
       if (P.mech) mechUpdate(dt, mv.lengthSq() > 0.01);
     }
     myMech.visible = !!P.mech;
+    // 交通燈、車、城市突發事件
+    { const tr = traffic.update(dt, T, P.pos, bikeOn);
+      if (tr.red) redLight();
+      if (tr.honk) { honkT -= dt; if (honkT <= 0) { honkT = 4; sfx.horn(); } } else honkT = 0.8; }
+    events.update(dt, P.pos, school.active() || jail.active() || api.busy());
     arena.update(dt, T, P.pos, monTargetPos());
     dogFollow(myDog, P.pos, P.face, dt);
     if (P.spraying) emitSpray(me);
@@ -1298,6 +1568,17 @@ function startGame(myName) {
         r.tag.position.set(r.pos.x, r.pos.y + 2.15, r.pos.z);
         continue;
       } else if (r.tveh) r.tveh.visible = false;
+      // 其他玩家坐緊觀光船 / 空中輕軌
+      if (s.bt) {
+        if (!r.boat) { r.boat = buildBoat('#1565c0'); scene.add(r.boat); }
+        const sv = r.boat.userData.seats[s.bt[1]] || r.boat.userData.seats[0], cs = Math.cos(s.bt[0]), sn = Math.sin(s.bt[0]);
+        r.boat.visible = true; r.boat.rotation.y = s.bt[0];
+        r.boat.position.set(r.pos.x - (sv.x * cs + sv.z * sn), r.pos.y - sv.y, r.pos.z - (-sv.x * sn + sv.z * cs));
+        r.av.position.copy(r.pos); r.av.rotation.set(0, s.bt[0], 0); sitPose(r.av, dt, false); attachHeld(r.av, null);
+        r.tag.position.set(r.pos.x, r.pos.y + 2.15, r.pos.z);
+        continue;
+      } else if (r.boat) r.boat.visible = false;
+      if (s.sk) { r.av.position.copy(r.pos); r.av.rotation.set(0, r.face, 0); sitPose(r.av, dt, false); attachHeld(r.av, null); r.tag.position.set(r.pos.x, r.pos.y + 2.15, r.pos.z); continue; }
       // 坐緊順風車（司機可以係我或者其他玩家）
       if (s.ps) {
         const dme = s.ps === net.id, dr = dme ? null : remotes.get(s.ps);
@@ -1357,8 +1638,8 @@ function startGame(myName) {
     } else { fxMat.opacity = 0; fxLight.intensity = 0; }
 
     // 互動提示
-    curInter = P.seat || P.flight || P.transit || P.pass ? null : (findInteract() || passInteract());
-    const lbl = P.transit ? '⏩ 即刻到站' : P.pass ? '🚪 落車' : P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : null);
+    curInter = P.seat || P.flight || P.transit || P.pass || P.boat || P.shuttle || sky.riding() ? null : (findInteract() || passInteract());
+    const lbl = P.boat ? '⏩ 返碼頭' : P.shuttle ? '⏩ 即刻到' : sky.riding() ? (sky.docked() ? '🚪 落車' : null) : (mtr.riding() && !curInter) ? '⏩ 即刻到站' : P.transit ? '⏩ 即刻到站' : P.pass ? '🚪 落車' : P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : null);
     $('act').classList.toggle('hidden', !lbl); if (lbl && $('act').textContent !== lbl) $('act').textContent = lbl;
 
     // 電梯面板
@@ -1383,7 +1664,7 @@ function startGame(myName) {
     npcs.update(dt, T);
 
     // 鏡頭
-    const target = new V3(P.pos.x, P.pos.y + (P.mech ? 20 : P.flight ? (P.flight.kind === 'jumbo' ? 10 : 2.5) : 1.5 * P.scale), P.pos.z);
+    const target = new V3(P.pos.x, P.pos.y + (P.mech ? 20 : P.shuttle ? 2.5 : P.flight ? (P.flight.kind === 'jumbo' ? 10 : 2.5) : 1.5 * P.scale), P.pos.z);
     if (P.flight && firstPerson) seatWorld(P.flight.seat);
     const dir = new V3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
     let look = null;
@@ -1401,13 +1682,13 @@ function startGame(myName) {
     } else {
       me.visible = true;
       let dist = camDist * Math.max(1, P.scale * 0.8);
-      if (P.transit) dist = Math.max(dist, { taxi: 9, minibus: 11, bus: 16 }[P.transit.t.id]); else if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, { plane: 18, heli: 16, jumbo: 80, fighter: 24 }[P.flight.kind]);
+      if (P.transit) dist = Math.max(dist, { taxi: 9, minibus: 11, bus: 16 }[P.transit.t.id]); else if (P.boat) dist = Math.max(dist, 13); else if (P.shuttle) dist = Math.max(dist, 16); else if (sky.riding()) dist = Math.max(dist, 16); else if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, { plane: 18, heli: 16, jumbo: 80, fighter: 24 }[P.flight.kind]);
       me.visible = !P.mech;
       ray.set(target, dir); ray.far = dist;
       const hit = ray.intersectObjects(camBlockers, false)[0];
       if (hit) dist = Math.max(0.6, hit.distance - 0.25);
       if (P.camper >= 0) { const c = campers.list[P.camper]; dist = Math.min(dist, camRayCols(c.toLocal(target), c.rotL(dir), dist, c.cols)); }
-      else if (!P.seat && !P.flight && !P.transit && !P.pass) dist = Math.min(dist, camRayCols(target, dir, dist));
+      else if (!P.seat && !P.flight && !P.transit && !P.pass && !P.boat && !P.shuttle && !sky.riding()) dist = Math.min(dist, camRayCols(target, dir, dist));
       camera.position.copy(target).addScaledVector(dir, dist);
       // 鏡頭唔可以穿落地底；向上望時鏡頭貼地，視線向天空抬高
       if (camera.position.y < P.pos.y + 0.25) camera.position.y = P.pos.y + 0.25;

@@ -266,29 +266,43 @@ export class Flight {
       this.speed = hs;
     }
     const next = p.clone().addScaledVector(this.vel, dt);
-    // 撞嘢
-    if (hit(next, this.ground)) {
-      if (this.kind !== 'heli' && (!this.ground || this.speed > 12)) return 'crash';
-      this.vel.set(0, Math.max(0, this.vel.y), 0); this.speed = 0; return 'blocked';
+    // 撞嘢：唔會爆！由上面落去就停喺天台，撞到側面就彈開
+    const c = hit(next, this.ground);
+    if (c) {
+      const top = c.max ? c.max[1] : null;
+      if (top !== null && p.y + 0.4 >= top - 0.6 && this.vel.y <= 0.5) {
+        this.roof = { c, y: top - 0.38 }; next.copy(p); next.y = this.roof.y;
+        if (!this.ground) { this.ground = true; this.pitch = 0; this.roll = 0; ev = 'roof'; }
+        this.vel.set(0, 0, 0); this.speed = Math.min(this.speed, 4);
+        p.copy(next); return ev;
+      }
+      this.vel.set(0, Math.min(0, this.vel.y), 0);
+      if (this.kind !== 'heli' && !this.ground) { this.yaw += Math.PI; this.speed *= 0.35; }
+      else this.speed = 0;
+      return 'bump';
     }
-    // 地面 / 停機坪
+    // 地面 / 停機坪 / 天台：喺邊度落地都唔會爆
     const floor = this.groundAt(next);
     if (next.y <= floor) {
       if (!this.ground) {
         const ok = canLand(next.x, next.z, this.kind === 'heli', floor);
-        if (!ok) {
-          if (this.kind !== 'heli') return 'crash';
-          next.y = floor + 2.5; this.vel.y = 0; ev = 'noland';
-        } else if (this.kind !== 'heli' && (this.vel.y < -fp.crashV || Math.abs(this.roll) > 0.5)) return 'crash';
-        else { this.ground = true; next.y = floor; this.vel.y = 0; this.pitch = 0; this.roll = 0; }
+        if (!ok && this.kind === 'heli') { next.y = floor + 2.5; this.vel.y = 0; ev = 'noland'; }
+        else {
+          if (this.vel.y < -fp.crashV || Math.abs(this.roll) > 0.5) ev = 'hard'; else if (!ok) ev = 'soft';
+          this.ground = true; next.y = floor; this.vel.y = 0; this.pitch = 0; this.roll = 0;
+        }
       } else next.y = floor;
-      if (this.ground && this.kind !== 'heli' && this.speed > 0.5 && !canLand(next.x, next.z, false, floor)) { this.speed = 0; this.throttle = 0; return 'offroad'; }
+      // 唔喺公路 / 機場：唔會爆，但只可以慢慢滑行返去公路先起飛
+      if (this.ground && this.kind !== 'heli' && !canLand(next.x, next.z, false, floor)) {
+        const cap = 12; if (this.speed > cap) { this.speed = cap; this.throttle = Math.min(this.throttle, cap / fp.max); ev = ev || 'offroad'; }
+      }
     } else if (next.y > floor + 0.3) this.ground = false;
     const altMax = this.kind === 'heli' ? 4000 : fp.alt; if (next.y > altMax) { next.y = altMax; this.vel.y = Math.min(0, this.vel.y); }
     p.copy(next);
     return ev;
   }
   groundAt(p) {
+    const r = this.roof; if (r) { const c = r.c, m = 3.2; if (p.x > c.min[0] - m && p.x < c.max[0] + m && p.z > c.min[2] - m && p.z < c.max[2] + m && p.y > r.y - 3) return r.y; this.roof = null; }
     for (const h of HELIPADS) if (h[2] && Math.hypot(p.x - h[0], p.z - h[1]) < 9 && p.y > h[2] - 2) return h[2];
     return 0;
   }

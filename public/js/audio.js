@@ -36,5 +36,8 @@ export const sfx = {
   spray() { noise(0.25, 0.15, 3000); },
   bark() { tone(600, 0.08, 'sawtooth', 0.15, 0, 380); tone(650, 0.1, 'sawtooth', 0.15, 0.15, 400); },
   whoosh() { noise(1.5, 0.3, 400); },
+  siren() { tone(660, 0.55, 'triangle', 0.1, 0, 990); tone(990, 0.55, 'triangle', 0.1, 0.6, 660); },
+  horn() { tone(392, 0.35, 'square', 0.08); tone(494, 0.35, 'square', 0.06); },
+  jet() { noise(0.6, 0.35, 900); },
 };
 export const audioCtx = () => ctx;
