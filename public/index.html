@@ -29,7 +29,17 @@
   #name { padding:8px 12px; border-radius:10px; border:1px solid #666; background:#111; color:#fff; font-size:16px; user-select:text; -webkit-user-select:text; }
   #go { margin-top:6px; padding:12px; border-radius:12px; background:linear-gradient(#ffd864,#e8a800); color:#2a1a00; font-size:20px; font-weight:bold; }
   #start .tip { font-size:12px; opacity:.65; }
-  @media (max-height:500px) { #start .card { padding:10px; gap:10px; } #preview { width:170px; min-width:150px; } #start h1 { font-size:20px; } .sw { width:26px; height:26px; } .opt { padding:4px 9px; font-size:12px; } #go { padding:8px; font-size:16px; } #start .form { gap:5px; } }
+  /* 手機 responsive：整張卡永遠喺畫面內，表單自己碌；開始掣永遠見到 */
+  #start { padding:max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  #start .card { max-height:calc(100dvh - 16px); box-sizing:border-box; }
+  #start .form { overflow-y:auto; overscroll-behavior:contain; }
+  #go { position:sticky; bottom:0; flex-shrink:0; box-shadow:0 -6px 12px rgba(0,0,0,.35); }
+  #start .fgrid { display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center; }
+  #start .fgrid label { white-space:nowrap; }
+  @media (max-height:560px) { #start .card { padding:8px; gap:8px; } #preview { width:min(26vw,170px); min-width:110px; align-self:center; } #start h1 { font-size:18px; letter-spacing:1px; } .sw { width:24px; height:24px; border-width:2px; } .opt { padding:3px 8px; font-size:12px; } #go { padding:7px; font-size:15px; margin-top:2px; } #start .form { gap:4px; } #name { padding:5px 10px; font-size:14px; } #start .tip { display:none; } #start .fgrid { gap:4px 8px; } #start label { font-size:12px; } }
+  @media (max-height:380px) { #preview { display:none; } }
+  @media (max-width:640px) and (orientation:portrait) { #start .card { flex-direction:column; align-items:stretch; } #preview { width:auto; min-width:0; height:min(28vh,220px); aspect-ratio:auto; } #start h1 { font-size:22px; } }
+  body:has(#start:not(.hidden)) #rotate { display:none !important; }
 
   #rotate { position:fixed; inset:0; z-index:100; background:#000; display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px; font-size:20px; text-align:center; padding:20px; }
   #rotate .ph { font-size:64px; animation:rot 1.6s infinite; }
@@ -110,6 +120,13 @@
   #fightHud .bar i { display:block; height:100%; width:100%; transition:width .2s; }
   .keyBtn { display:block; width:100%; margin:6px 0; padding:12px; border-radius:10px; background:#2d3a5a; font-size:16px; }
   .keyBtn:active { background:#45568a; }
+  .chBox { max-width:min(640px,94vw); max-height:88dvh; display:flex; flex-direction:column; }
+  #chSub { font-size:14px; opacity:.85; margin-bottom:4px; white-space:pre-line; }
+  #chOpts { overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--chw,240px),1fr)); gap:6px; padding:2px; }
+  #chOpts .keyBtn { margin:0; font-size:15px; text-align:left; line-height:1.3; }
+  #chOpts .keyBtn small { display:block; opacity:.7; font-size:12px; }
+  #chOpts .keyBtn.on { background:#1b8a3a; }
+  #chOpts .chHead { grid-column:1/-1; text-align:left; color:var(--gold); font-weight:bold; margin-top:6px; }
   .cancel { margin-top:6px; padding:8px 18px; border-radius:10px; background:#444; }
 
   #cctvFrame { position:absolute; pointer-events:none; border:3px solid #333; border-radius:6px; box-shadow:0 0 0 2px #0f0 inset; }
@@ -196,6 +213,7 @@
       <h1>🛗 搭 Lift 遊戲</h1>
       <label>名字</label>
       <input id="name" maxlength="16" placeholder="輸入你嘅名">
+      <div class="fgrid">
       <label>性別</label>
       <div class="row" id="optGender"></div>
       <label>膚色</label>
@@ -208,6 +226,7 @@
       <div class="row" id="optHair"></div>
       <label>褲色</label>
       <div class="row" id="optPants"></div>
+      </div>
       <button id="go">開始玩 ▶</button>
       <div class="tip">唔使註冊、唔使密碼。手機請打橫玩。電腦：WASD／方向鍵行，滑鼠拖動轉鏡頭，滾輪縮放，E 互動，空白鍵跳。</div>
     </div>
@@ -229,6 +248,7 @@
     <button class="tb" id="btnBag" title="背包">🎒<small>背包</small></button>
     <button class="tb" id="btnMap" title="大地圖 (M)">🗺<small>地圖</small></button>
     <button class="tb" id="btnBike" title="電單車 (B)">🏍<small>電單車</small></button>
+    <button class="tb" id="btnTaxi" title="叫的士 / 小巴 / 巴士">🚕<small>叫車</small></button>
     <button class="tb" id="btnMusic" title="背景音樂">🎵<small>音樂</small></button>
     <button class="tb" id="btnVoice" title="語音">🎤<small>語音</small></button>
     <button class="tb" id="btnCctv" title="CCTV">📹<small>CCTV</small></button>
@@ -300,6 +320,7 @@
 <div id="mapModal" class="modal hidden"><div class="box" style="padding:10px;max-width:none">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><b style="color:var(--gold);font-size:20px">🗺 大地圖</b><span id="mapInfo" style="font-size:15px;opacity:.9"></span>
     <span style="margin-left:auto;display:flex;gap:6px"><button class="mapBtn" id="mapIn">＋</button><button class="mapBtn" id="mapOut">－</button><button class="mapBtn" id="mapMe">📍 我</button><button class="mapBtn" id="mapAll">🌏 全圖</button></span><button class="x" id="mapClose">✕</button></div>
+  <div id="mapPickHint" class="hidden" style="background:#ffd864;color:#2a1a00;font-weight:bold;border-radius:8px;padding:6px 10px;margin-bottom:6px;font-size:16px"></div>
   <canvas id="mapCv" width="600" height="600" style="display:block;width:min(94vw,1100px);height:min(74vh,860px);border-radius:10px;touch-action:none;cursor:crosshair"></canvas>
   <div style="font-size:15px;opacity:.9;margin-top:6px">滾輪 / 兩隻手指 / ＋－ 縮放 ・ 拖動移地圖 ・ 撳一下傳送 ・ 🟡 小鎮 ⚪ 你 🔵 其他玩家</div>
 </div></div>
@@ -324,12 +345,10 @@
     <div class="bcard"><div>身上金條</div><b id="bGold">0</b></div>
     <div class="bcard"><div>身上銀條</div><b id="bSilver">0</b></div>
     <div class="bcard"><div>保險箱金條</div><b id="bVault">0</b></div>
+    <div class="bcard"><div>保險箱銀條</div><b id="bVaultS">0</b></div>
   </div>
   <div id="goldPrice"></div>
-  <div class="brow"><span>🥇 金條</span>
-    <button data-b="depGold1">存 1 條</button><button data-b="depGoldAll">全部存入</button>
-    <button data-b="wdGold1">提 1 條</button>
-  </div>
+  <div class="brow"><span>🔐 保險箱</span><span style="font-size:13px;opacity:.85;text-align:left">金條 / 銀條要搵櫃位職員揀「打開保險箱」，入金庫親手放入去（保險箱唔可以存現金）</span></div>
   <div class="brow"><span>💰 賣金</span>
     <button data-b="sell1">賣 1 條</button><button data-b="sellAll">全部賣出</button>
   </div>
@@ -362,6 +381,14 @@
   <div style="text-align:center;opacity:.8" id="phAlt"></div>
   <p>👥 在線玩家：</p><ul id="phList"></ul>
   <button class="cancel" id="phClose" style="width:100%">關閉</button>
+</div></div>
+
+<!-- 通用選擇（Lift 召喚、銀行職員、寵物、的士 / 小巴 / 巴士）-->
+<div id="chooseModal" class="modal hidden"><div class="box chBox">
+  <h3 id="chTitle">請揀</h3>
+  <div id="chSub"></div>
+  <div id="chOpts"></div>
+  <button class="cancel" id="chClose">取消</button>
 </div></div>
 
 <div id="toast"></div>

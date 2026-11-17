@@ -38,6 +38,13 @@ function travelTime(a, b, hotel) { return hotel ? (2 + 0.9 * Math.abs(a - b)) * 
 function arrival(L) { return L.t0 + L.dur; }
 function moving(L, now) { return now < arrival(L); }
 
+// 同 client lifts.js floorAt 一樣（對數插值），用嚟計 Lift 而家喺幾樓
+function floorNow(L, T) {
+  if (T <= L.t0) return L.from;
+  if (T >= L.t0 + L.dur) return L.to;
+  const u = (T - L.t0) / L.dur, e = (1 - Math.cos(Math.PI * u)) / 2;
+  return Math.exp(Math.log(L.from + 1) + (Math.log(L.to + 1) - Math.log(L.from + 1)) * e) - 1;
+}
 function liftCmd(L, m, now) {
   const busy = moving(L, now);
   switch (m.cmd) {
@@ -54,6 +61,7 @@ function liftCmd(L, m, now) {
     case 'goto':
     case 'call': {
       let f = m.cmd === 'call' && !L.hotel ? 1 : Math.round(Number(m.floor));
+      if (busy && m.cmd === 'call' && !L.hotel) { L.pendingCall = true; break; }
       if (!(L.hotel ? f >= 1 && f <= 20 : f >= 0 && f <= MAX_FLOOR) || busy) break;
       let depart = now;
       if (now < L.doorEnd) { L.doorEnd = Math.max(now + 1000, L.doorStart + 1000); depart = L.doorEnd; }
@@ -63,6 +71,15 @@ function liftCmd(L, m, now) {
       break;
     }
     case 'emerg': L.emerg = !L.emerg; break;
+    // 外面等 Lift 嘅人行使權利：無論 Lift 喺邊、行緊都好，即刻停低再落返地面（大廈 Lift = 1 樓）
+    case 'force': {
+      const cur = floorNow(L, now), f = 1;
+      L.pendingOpen = false; L.pendingCall = false;
+      if (Math.abs(cur - f) < 0.01 && !busy) { liftCmd(L, { cmd: 'open' }, now); break; }
+      L.from = cur; L.to = f; L.t0 = now + 600; L.dur = travelTime(cur, f, L.hotel);
+      L.doorStart = arrival(L) + 300; L.doorEnd = L.doorStart + 8000;
+      break;
+    }
   }
 }
 
@@ -139,7 +156,10 @@ wss.on('connection', ws => {
 // 位置快照 10Hz；電梯 pendingOpen 處理
 setInterval(() => {
   const now = Date.now();
-  for (const L of lifts) if (L.pendingOpen && !moving(L, now)) { L.pendingOpen = false; liftCmd(L, { cmd: 'open' }, now); broadcastLifts(); }
+  for (const L of lifts) {
+    if (L.pendingCall && !moving(L, now)) { L.pendingCall = false; L.pendingOpen = false; liftCmd(L, { cmd: 'call' }, now); broadcastLifts(); }
+    else if (L.pendingOpen && !moving(L, now)) { L.pendingOpen = false; liftCmd(L, { cmd: 'open' }, now); broadcastLifts(); }
+  }
   if (!players.size) return;
   monTick(now, 0.1);
   const snap = {};

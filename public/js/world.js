@@ -245,15 +245,15 @@ export function buildWorld(scene, api) {
   solid(pet.x0 + 0.2, 0, 1, pet.x0 + 2.4, 0.7, 1.1, std('#bbb', { metalness: 0.6 }));
   solid(pet.x0 + 2.3, 0, 1, pet.x0 + 2.4, 0.7, 4.5, std('#bbb', { metalness: 0.6 }));
   const showDog = buildShiba(); showDog.position.set(pet.x0 + 1.2, 0, 3); showDog.rotation.y = Math.PI / 2; scene.add(showDog);
-  updaters.push((dt, t) => { showDog.userData.tail.rotation.z = Math.sin(t * 8) * 0.5; showDog.visible = !api.hasDog(); });
+  updaters.push((dt, t) => { showDog.userData.tail.rotation.z = Math.sin(t * 8) * 0.5; });
   solid(pet.x1 - 3, 0, pet.z0 + 0.3, pet.x1 - 1, 1.0, pet.z0 + 1, std('#fff', { map: T.woodTex() }));
-  inter([pet.x0 + 2.9, 0, 3], 1.8, () => api.hasDog() ? '🐕 送柴犬返寵物店' : '🐕 領養柴犬', () => api.toggleDog());
+  inter([pet.x0 + 2.9, 0, 3], 1.8, () => api.hasDog() ? `🐾 寵物店（而家養緊${api.petName()}）` : '🐾 領養寵物（狗 / 貓 / 野獸）', () => api.toggleDog());
 
   const vet = shop(-24, -12, '🏥 獸醫診所 VET', '#e3f2fd', '#00897b');
   solid(-25, 0, -13, -23, 0.85, -11.8, std('#cfd8dc', { metalness: 0.6, roughness: 0.3 }));
   const cross = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: T.signTex('✚', '#fff', '#00a152', 256, 256, 'bold 220px sans-serif') }));
   cross.position.set(vet.x0 + 0.02, 2.2, -12); cross.rotation.y = Math.PI / 2; scene.add(cross);
-  inter([-22.5, 0, -12.4], 1.8, () => '🩺 幫柴犬睇醫生', () => api.vet());
+  inter([-22.5, 0, -12.4], 1.8, () => '🩺 幫寵物睇醫生', () => api.vet());
 
   // ---------- 柏熙酒店：見 hotel.js（20 層，可以行樓梯 / 搭 Lift）----------
   // 表演湖 + 噴水池

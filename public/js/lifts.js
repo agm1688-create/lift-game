@@ -221,9 +221,13 @@ export function buildLifts(scene, api) {
       pos: new THREE.Vector3(cpx, 0, cpz + 0.4), r: 1.5,
       label: () => `🔑 入 Key 開 ${D.name}`,
       act: () => api.keyPrompt(id, () => {
-        const T = api.now();
-        if (Math.round(L.floor) === 1 && !isMoving(L.state, T)) api.liftCmd(id, 'open');
-        else { api.liftCmd(id, 'goto', 1); api.liftCmd(id, 'open'); }
+        const T = api.now(), mv = isMoving(L.state, T), f = Math.round(L.floor);
+        if (f === 1 && !mv) return api.liftCmd(id, 'open');
+        const where = mv ? `而家喺 ${Math.round(L.floor)} 樓，${L.state.to > L.state.from ? '向上' : '向下'}行緊` : `而家停喺 ${f} 樓`;
+        api.choose(`🛗 ${D.name}`, [
+          { label: '🔔 正常召 Lift', sub: mv ? '等佢到咗目的地之後再落返嚟地面' : '叫佢落返嚟地面', fn: () => { api.liftCmd(id, 'call'); api.toast(`🔔 已召 ${D.name}，等等佢落嚟`); } },
+          { label: '⏬ 強制 Lift 即刻落地面', sub: '等 Lift 嘅人嘅權利：Lift 即刻停低，直接落返地面開門（入面嘅人都要一齊落）', fn: () => { api.liftCmd(id, 'force'); api.sfx.beep(); api.toast(`⏬ 強制召 ${D.name} 落地面！`, 3000); } },
+        ], `${where}。另一部 Lift 唔會受影響。`);
       }),
       show: () => api.playerY() > -1,
     });

@@ -165,7 +165,11 @@ export function buildVillage(scene, api = {}) {
     const hw = Math.max(4.5, Math.min(w, d) * (b.kind === 'mall' ? 0.38 : 0.27));
     const I = shell(B, c[0] - hw, c[1] - hw, c[0] + hw, c[1] + hw, GF, mat);
     if (b.kind === 'mall') storeInterior(B, I, 'diner', () => 0.5, '豪景花園商場・大八坊中菜館');
-    else storeInterior(B, I, 'apt', () => 0.3, `${zh(b.name)} 大堂`);
+    else {
+      storeInterior(B, I, 'apt', () => 0.3, `${zh(b.name)} 大堂`);
+      const info = { name: zh(b.name), lv: Math.max(2, b.lv), back: [I.xm, 0, I.iz0 + 2.4] };
+      inter.push({ pos: new V3(I.xm, 0, I.iz0 + 1.3), r: 2.4, label: () => `🛗 搭 Lift 上樓（${info.name}，1–${info.lv} 樓）`, act: () => api.aptLift && api.aptLift(info) });
+    }
     sign(B, c[0], GF - 0.8, c[1] + hw + 0.42, Math.min(8, hw * 1.6), 1.0, signMat(zh(b.name), '#5d4037', '#ffe082'));
     B.box(c[0] - 3, H, c[1] - 3, c[0] + 3, H + 3.5, c[1] + 3, std('#bdbdbd'), false);
     if (b.lv >= 13) sign(B, c[0], H - 2, bb.z1 + 0.3, Math.min(14, w * 0.6), 2, signMat(zh(b.name), '#ffffff', '#5d4037', 'bold 60px serif'));

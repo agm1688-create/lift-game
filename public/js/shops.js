@@ -1,7 +1,7 @@
 // 商店街：麥當勞、肯德基、吉野家、大八坊酒樓、百佳、惠康、銀行（全部程式即場畫，唔用 logo 圖片）
 import * as THREE from 'three';
 import * as T from './textures.js';
-import { goldMat } from './avatar.js';
+import { goldMat, buildAvatar } from './avatar.js';
 
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 const Z0 = 36, DEPTH = 12, Z1 = Z0 + DEPTH, H = 4.2;
@@ -130,7 +130,7 @@ export function buildShops(scene, api, SHOPS = {}) {
     const actZ = { fast: Z1 - 4, bar: Z0 + 3.2, chinese: Z0 + 2.2, market: Z0 + 2.4 }[S.type];
     if (S.type !== 'bank') inter([cx, 0, actZ], 2.6, () => `${S.act}（${name}）`, () => api.openShop(S.key, name, colors));
     else {
-      inter([cx, 0, Z1 - 4.2], 2.6, () => S.act, () => api.openBank(name));
+      inter([cx, 0, Z1 - 4.2], 2.6, () => '🙋 搵櫃位職員（提錢 / 開保險箱）', () => api.bankTeller(name));
     }
   }
 
@@ -350,6 +350,13 @@ export function buildShops(scene, api, SHOPS = {}) {
       sign(`${i + 1} 號櫃位`, c1, '#fff', 0.8, 0.22, tx, 2.3, cz - 0.02, Math.PI, 'bold 150px sans-serif');
       mesh(new THREE.BoxGeometry(0.35, 0.25, 0.04), new THREE.MeshBasicMaterial({ color: '#222' }), tx, 1.25, cz + 0.2);
     }
+    // 櫃位職員（2 號 + 3 號櫃位有人）
+    [[1, { gender: 'f', skin: '#f1c27d', hat: 'none', shirt: '#ffffff', pants: '#1d3b6e', hair: '#1b1b1b' }, '陳小姐'], [2, { gender: 'm', skin: '#e0ac69', hat: 'none', shirt: '#dfe9f5', pants: '#263238', hair: '#2b2b2b' }, '李先生']].forEach(([i, look, nm]) => {
+      const tx = x0 + 2 + i * ((S.w - 4) / 3);
+      const av = buildAvatar(look); av.position.set(tx, 0, cz + 0.85); av.rotation.y = Math.PI; scene.add(av);
+      box(tx - 0.3, 0, cz + 1.1, tx + 0.3, 0.5, cz + 1.5, std('#333'), false);
+      sign(`職員 ${nm}`, '#ffffff', c1, 0.6, 0.15, tx, 1.95, cz - 0.03, Math.PI, 'bold 120px sans-serif');
+    });
     // 金庫門
     const vault = mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.3, 32), std('#9aa0a6', { metalness: 0.95, roughness: 0.25 }), cx, 1.6, Z1 - 0.2); vault.rotation.x = Math.PI / 2;
     const wheel = mesh(new THREE.TorusGeometry(0.45, 0.06, 8, 24), goldMat, cx, 1.6, Z1 - 0.38);
