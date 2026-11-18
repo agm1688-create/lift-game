@@ -10,14 +10,33 @@ const queue = [], lastSaid = new Map();
 let speaking = false;
 const synth = () => window.speechSynthesis;
 
-function pickVoice() {
-  const vs = synth()?.getVoices() || [];
-  const en = vs.filter(v => /^en[-_]/i.test(v.lang));
-  voice = en.find(v => /en[-_]GB/i.test(v.lang) && /female|libby|sonia|serena|google uk english female/i.test(v.name))
-    || en.find(v => /google (uk|us) english/i.test(v.name)) || en.find(v => /en[-_](GB|US)/i.test(v.lang)) || en[0] || null;
+// 揀最自然嘅英文聲：Premium / Enhanced / Natural（神經網絡）> Online > Google > 普通；唔要搞笑聲（Zarvox、Bells…）
+const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|ralph|kathy|eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley/i;
+let rate = 0.95, chosenURI = '';
+export function voiceScore(v) {
+  if (!/^en[-_]/i.test(v.lang)) return -1;
+  let s = /en[-_](GB|US)/i.test(v.lang) ? 10 : /en[-_](AU|IE|CA|NZ)/i.test(v.lang) ? 7 : 4;
+  if (/premium/i.test(v.name)) s += 60;
+  if (/enhanced|neural|natural/i.test(v.name)) s += 50;
+  if (/online/i.test(v.name)) s += 40;
+  if (/google/i.test(v.name)) s += 30;
+  if (/siri/i.test(v.name)) s += 25;
+  if (/samantha|daniel|karen|moira|serena|kate|ava|allison|susan|tom|evan|nathan|zoe|libby|sonia|aria|jenny|guy|ryan|emma|michelle/i.test(v.name)) s += 8;
+  if (/compact/i.test(v.name)) s -= 15;
+  if (NOVELTY.test(v.name)) s -= 80;
+  return s;
 }
+export function englishVoices() { return (synth()?.getVoices() || []).filter(v => /^en[-_]/i.test(v.lang) && voiceScore(v) > -30).sort((a, b) => voiceScore(b) - voiceScore(a)); }
+function pickVoice() {
+  const list = englishVoices();
+  voice = (chosenURI && list.find(v => v.voiceURI === chosenURI)) || list[0] || null;
+}
+export function setVoice(uri) { chosenURI = uri; store?.set('engVoice', uri); pickVoice(); }
+export const currentVoice = () => voice;
+export function setRate(r) { rate = r; store?.set('engRate', r); }
+export const currentRate = () => rate;
 export function initEnglish(s) {
-  store = s; enabled = s.get('eng2', true);   // 預設開；要密碼先關得
+  store = s; enabled = s.get('eng2', true); chosenURI = s.get('engVoice', ''); rate = s.get('engRate', 0.95);   // 預設開；要密碼先關得
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   sub = document.createElement('div'); sub.id = 'engSub'; document.body.appendChild(sub);
   if (synth()) { pickVoice(); synth().onvoiceschanged = pickVoice; }
@@ -43,7 +62,7 @@ function next() {
   if (!synth()) { setTimeout(done, Math.max(1500, item.en.length * 70)); return; }
   try {
     const u = new SpeechSynthesisUtterance(item.en);
-    if (voice) u.voice = voice; u.lang = voice?.lang || 'en-GB'; u.rate = item.rate || 0.88; u.pitch = 1.05;
+    if (voice) u.voice = voice; u.lang = voice?.lang || 'en-GB'; u.rate = rate * (item.rate || 1); u.pitch = 1;
     u.onend = done; u.onerror = done;
     synth().speak(u);
     setTimeout(() => { if (speaking && !synth().speaking) done(); }, Math.max(4000, item.en.length * 120));

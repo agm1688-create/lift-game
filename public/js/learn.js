@@ -109,7 +109,7 @@ export function buildLearn(api) {
     list.querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
       const [, zh, en] = M.parts[+b.dataset.i];
       list.querySelectorAll('[data-i]').forEach(x => x.classList.remove('on')); b.classList.add('on');
-      api.say(`${en}.`, `${zh}（${en}）`, { force: true, now: true, rate: 0.8 });
+      api.say(`${en}.`, `${zh}（${en}）`, { force: true, now: true, rate: 0.92 });
     });
     modal.style.display = 'flex';
     if (!renderer) ensure3D(cv);

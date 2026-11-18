@@ -38,7 +38,7 @@ import { buildLearn, MACHINES } from './learn.js';
 import { buildPeds } from './peds.js';
 import { buildThemeParks } from './themeparks.js';
 import { junctionsNear } from './traffic.js';
-import { initEnglish, unlockSpeech, say, setEnglish, englishOn, VEH, ITEM, PET_EN, numWords, article } from './english.js';
+import { englishVoices, voiceScore, setVoice, currentVoice, setRate, currentRate, initEnglish, unlockSpeech, say, setEnglish, englishOn, VEH, ITEM, PET_EN, numWords, article } from './english.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
 let CATALOG = { SHOPS: {}, GOLD: { tael_buy: 30000, tael_sell: 32000 } };
@@ -941,8 +941,23 @@ function startGame(myName) {
   $('btnEng').onclick = () => {
     sfx.click();
     if (!englishOn()) { setEnglish(true); $('btnEng').classList.add('on'); toast('🔤 英文發音：開（唔同情景都會講英文，有中文字幕）'); say('Hello! Let us learn English together.', '你好！一齊學英文啦！', { force: true }); return; }
-    askPassword({ sfx }, '🔤 關閉英文發音', '英文發音預設係開住，幫你練英文聽力。<br>要輸入密碼先可以關。', () => { setEnglish(false); $('btnEng').classList.remove('on'); toast('🔤 英文發音：關'); });
+    engMenu();
   };
+  // 揀把聲（最自然嘅排最前）+ 語速；關閉要密碼
+  function engMenu() {
+    const cur = currentVoice(), vs = englishVoices().slice(0, 12);
+    const tag = v => { const sc = voiceScore(v); return sc >= 60 ? '⭐⭐⭐ 好自然' : sc >= 40 ? '⭐⭐ 幾自然' : '⭐ 普通'; };
+    const sample = () => say('Hello! I am your English teacher. Let us learn English together. This is a double-decker bus.', '你好！我係你嘅英文老師，一齊學英文啦！', { force: true, now: true, key: 'sample' + Date.now() });
+    const opts = [{ head: '🔊 揀把聲（撳一下會試聽）' }];
+    vs.forEach(v => opts.push({ label: `${v === cur ? '✅ ' : ''}${v.name.replace(/\s*\(.*?\)\s*/g, ' ').trim()}`, sub: `${v.lang}｜${tag(v)}`, keep: true, fn: () => { setVoice(v.voiceURI); sample(); engMenu(); } }));
+    if (!vs.length) opts.push({ label: '（呢部機冇英文語音）', sub: '去手機設定下載英文語音', fn: () => { } });
+    opts.push({ head: '🐢 講嘢速度' });
+    [[0.85, '🐢 慢啲（初學）'], [0.95, '🙂 正常'], [1.05, '🐇 快啲（好似真人）']].forEach(([r, n]) => opts.push({ label: `${Math.abs(currentRate() - r) < 0.01 ? '✅ ' : ''}${n}`, keep: true, fn: () => { setRate(r); sample(); engMenu(); } }));
+    opts.push({ head: '其他' });
+    opts.push({ label: '🔇 關閉英文發音', sub: '要輸入密碼', fn: () => askPassword({ sfx }, '🔤 關閉英文發音', '英文發音預設係開住，幫你練英文聽力。<br>要輸入密碼先可以關。', () => { setEnglish(false); $('btnEng').classList.remove('on'); toast('🔤 英文發音：關'); }) });
+    const hint = isIOS ? 'iPhone 想把聲更自然：設定 → 輔助使用 → 朗讀內容 → 聲音 → 英文，下載「Premium / 增強」聲（例如 Ava、Zoe、Evan），再返嚟揀' : '揀 ⭐⭐⭐ 嗰啲聲最自然（例如 Natural / Online / Google）';
+    choose('🔤 英文發音設定', opts, `而家用緊：${cur ? cur.name : '預設聲'}｜${hint}`, 200);
+  }
   $('btnMusic').onclick = () => { musicBox.classList.toggle('hidden'); renderMusic(); sfx.click(); };
   { const m = store.get('music', 1); playMusic(m); $('btnMusic').classList.toggle('on', m > 0); }
 
