@@ -22,7 +22,7 @@ import { buildVault } from './vault.js';
 import { buildApartments } from './apartments.js';
 import { buildSchool } from './school.js';
 import { TRANSIT, transitIndex, buildTransitModel, planRoute, routeAt, buildTransitStand } from './transit.js';
-import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA, RIVER, LOHAS, HARBOUR, TUNNELS, DISNEY, OCEAN } from './city.js';
+import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA, RIVER, LOHAS, HARBOUR, TUNNELS, DISNEY, OCEAN, SANTA } from './city.js';
 import { buildTraffic } from './traffic.js';
 import { buildEvents } from './events.js';
 import { buildJail } from './jail.js';
@@ -879,7 +879,7 @@ function startGame(myName) {
   }
   function leaveRide() {
     const r = park.rides[P.seat.r]; P.seat = null;
-    api.teleport(r.board.exit[0], 0.05, r.board.exit[1]);
+    api.teleport(r.board.exit[0], (r.board.exit[2] || 0) + 0.05, r.board.exit[1]);
     me.rotation.set(0, P.face, 0); me.userData.body.position.y = 0;
     firstPerson = fpBeforeRide; camPitch = firstPerson ? 0 : 0.32; $('btnFP').classList.toggle('on', firstPerson);
     toast('🚶 落咗車'); sfx.click();
@@ -1078,7 +1078,7 @@ function startGame(myName) {
     rectM({ x0: HARBOUR.x0, x1: HARBOUR.x1, z0: HARBOUR.z0 + 6, z1: HARBOUR.z1 - 6 }, '#4aa3df');
     g.save(); g.setLineDash([6, 4]); g.strokeStyle = '#ffeb3b'; g.lineWidth = Math.max(2, 6 * s);
     TUNNELS.forEach(t => { const [a, b] = w2m(t.x, HARBOUR.z0), [, d] = w2m(t.x, HARBOUR.z1); g.beginPath(); g.moveTo(a, b); g.lineTo(a, d); g.stroke(); }); g.restore();
-    rectM(DISNEY, '#f8bbd0'); rectM(OCEAN, '#b2ebf2');
+    rectM(DISNEY, '#f8bbd0'); rectM(OCEAN, '#b2ebf2'); rectM({ x0: SANTA.x0, x1: SANTA.x1, z0: -262, z1: -214 }, '#f3dfb0'); rectM({ x0: SANTA.x0, x1: SANTA.x1, z0: SANTA.z0, z1: -262 }, '#4aa3df'); rectM({ x0: 30, x1: 70, z0: -300, z1: -206 }, '#a1887f');
     rectM(LOHAS, '#e1bee7'); rectM({ x0: 4800, x1: 4894, z0: 2300, z1: 2894 }, '#4aa3df'); rectM({ x0: 4300, x1: 4800, z0: 2830, z1: 2894 }, '#4aa3df');
     // 空中輕軌（藍色虛線）
     g.save(); g.strokeStyle = '#0288d1'; g.lineWidth = Math.max(2, 5 * s); g.setLineDash([8, 5]); g.beginPath();
@@ -1104,7 +1104,7 @@ function startGame(myName) {
     label('✈ 國際機場', 820, s > 0.25 ? -320 : -90, big);
     label('🏘 豪景花園', VOX, s > 0.25 ? VILLAGE.z0 - 25 : VOZ, big);
     label('⚔ 怪獸決戰場', -1700, -100, big);
-    label('🏰 迪士尼樂園', -1600, 2000, big); label('🐬 海洋公園', 2200, 4000, big);
+    label('🏰 迪士尼樂園', -1600, 2000, big); label('🐬 海洋公園', 2200, 4000, big); label('🌴 聖塔莫尼卡', 65, -240, big);
     label('🚢 城市河', -300, -600, big); label('🌊 海港', 600 + 1800, 2800, big);
     if (s > 0.15) TUNNELS.forEach(t => label('🚇' + t.n, t.x, 2800, 13)); label('🌅 日出康城', 4600, 2600, big);
     if (s > 0.12) for (const k in MTR_ENTR) { const e = MTR_ENTR[k]; label(MTR_ST[k][0], e.x, e.z - 16 / s * 0.6, s > 0.5 ? 14 : 11); }
@@ -1176,7 +1176,8 @@ function startGame(myName) {
     x = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, x)); z = Math.max(-HALF_WORLD + 20, Math.min(HALF_WORLD - 20, z));
     const inR = R => x > R.x0 && x < R.x1 && z > R.z0 && z < R.z1;
     let name;
-    if (inR(TOWN)) { x = SPAWN.x; z = SPAWN.z; name = '小鎮'; }
+    if (inR(SANTA)) { x = themeParks.gate.santa.x; z = themeParks.gate.santa.z; name = '聖塔莫尼卡'; }
+    else if (inR(TOWN)) { x = SPAWN.x; z = SPAWN.z; name = '小鎮'; }
     else if (inR(VILLAGE)) { x = village.center.x; z = village.center.z; name = '豪景花園'; }
     else if (inR(AIRPORT)) { x = airport.spawn.x; z = airport.spawn.z; name = '國際機場'; }
     else if (inR(ARENA)) { x = arena.gate.x; z = arena.gate.z; name = '怪獸決戰場（閘口）'; }

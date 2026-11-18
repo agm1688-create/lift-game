@@ -20,6 +20,7 @@ export const TUNNELS = [
 ];
 export const DISNEY = { x0: -1900, x1: -1300, z0: 1700, z1: 2300 };   // 迪士尼樂園
 export const OCEAN = { x0: 1900, x1: 2500, z0: 3700, z1: 4300 };      // 海洋公園
+export const SANTA = { x0: -250, x1: 380, z0: -300, z1: -152 };    // 聖塔莫尼卡（柏熙酒店後面，喺小鎮範圍入面）
 export const EXCL = [TOWN, AIRPORT, ARENA, VILLAGE, RIVER, LOHAS, HARBOUR, DISNEY, OCEAN];
 const NEAR = 1, FAR = 4, M = 94;                                 // 近區半徑、遠區半徑、區內可用半闊
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...extra });

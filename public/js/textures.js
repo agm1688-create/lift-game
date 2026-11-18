@@ -78,6 +78,8 @@ export function signTex(text, bg = '#1d3b6e', fg = '#fff', w = 512, h = 128, fon
     g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
     g.fillStyle = fg; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
     const lines = text.split('\n');
+    const mw = Math.max(...lines.map(l => g.measureText(l).width));   // 太長就縮細字，唔會切走
+    if (mw > w - 28) { const m = font.match(/(\d+)px/); if (m) g.font = font.replace(m[0], Math.floor(+m[1] * (w - 28) / mw) + 'px'); }
     lines.forEach((l, i) => g.fillText(l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * (h / lines.length) * 0.9));
   });
 }
