@@ -234,6 +234,32 @@ export function buildEvents(scene, api) {
     if (fire) updateFire(dt, p); else if (ok) { fireT -= dt; if (fireT <= 0) { fireT = rand(150, 240); if (!startFire(p)) fireT = 20; } }
     if (thief) updateThief(dt, p); else if (ok) { thiefT -= dt; if (thiefT <= 0) { thiefT = rand(100, 170); if (!startThief(p)) thiefT = 15; } }
     stepP(flame, dt, -1); stepP(smoke, dt, -0.4); stepP(water, dt, 9.8);
+    applyKnocks(dt);
   }
-  return { update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
+  // 撞飛消防車 / 警車（彈開一陣，之後返返原位繼續）
+  const knocks = new Map();
+  function knock(p, vel, R) {
+    let n = 0;
+    for (const o of [truck, pcar]) {
+      if (!o.visible || knocks.has(o)) continue;
+      const base = o.userData.base || o.position;
+      if (Math.hypot(base.x - p.x, base.z - p.z) > R + (o === truck ? 4.5 : 2.5) || p.y > 6) continue;
+      const ax = base.x - p.x, az = base.z - p.z, al = Math.hypot(ax, az) || 1, sp = Math.hypot(vel.x, vel.z);
+      knocks.set(o, { off: new V3(), v: new V3(ax / al * (5 + sp * 0.3), 3 + sp * 0.25, az / al * (5 + sp * 0.3)), spin: (Math.random() - 0.5) * 6, t: 2.8, rot: 0 }); n++;
+    }
+    return n;
+  }
+  function applyKnocks(dt) {
+    for (const [o, K] of knocks) {
+      // 如果今格冇人重設位置，先減返上一格加咗嘅偏移
+      if (K.last && o.position.equals(K.last)) { o.position.sub(K.ap); o.rotation.y -= K.apr; }
+      K.t -= dt; K.off.addScaledVector(K.v, dt); K.v.y -= 18 * dt; K.v.x *= 1 - dt; K.v.z *= 1 - dt;
+      if (K.off.y < 0) { K.off.y = 0; K.v.y = -K.v.y * 0.3; }
+      K.rot += K.spin * dt; K.spin *= 1 - dt * 0.8;
+      const back = Math.max(0, Math.min(1, K.t)); K.ap = K.off.clone().multiplyScalar(back); K.apr = K.rot * back;
+      o.position.add(K.ap); o.rotation.y += K.apr; K.last = o.position.clone();
+      if (K.t <= 0) knocks.delete(o);
+    }
+  }
+  return { truck, pcar, knock, applyKnocks, update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
 }

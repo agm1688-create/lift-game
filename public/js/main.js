@@ -22,7 +22,7 @@ import { buildVault } from './vault.js';
 import { buildApartments } from './apartments.js';
 import { buildSchool } from './school.js';
 import { TRANSIT, transitIndex, buildTransitModel, planRoute, routeAt, buildTransitStand } from './transit.js';
-import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA, RIVER, LOHAS, HARBOUR, TUNNELS } from './city.js';
+import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, TOWN, HALF_WORLD, VILLAGE, AIRPORT, ARENA, RIVER, LOHAS, HARBOUR, TUNNELS, DISNEY, OCEAN } from './city.js';
 import { buildTraffic } from './traffic.js';
 import { buildEvents } from './events.js';
 import { buildJail } from './jail.js';
@@ -34,6 +34,10 @@ import { buildSkytrain, SKY_PATH, SKY_STATIONS } from './skytrain.js';
 import { buildLohas } from './lohas.js';
 import { buildLiftRoom } from './liftroom.js';
 import { buildTunnels } from './tunnel.js';
+import { buildLearn, MACHINES } from './learn.js';
+import { buildPeds } from './peds.js';
+import { buildThemeParks } from './themeparks.js';
+import { junctionsNear } from './traffic.js';
 import { initEnglish, unlockSpeech, say, setEnglish, englishOn, VEH, ITEM, PET_EN, numWords, article } from './english.js';
 
 // 真實餐牌 / 價錢 / 金價（網上資料整理，喺 catalog.js）
@@ -186,11 +190,14 @@ function startGame(myName) {
   const shuttleStand = buildShuttleStand();
   const liftRoom = buildLiftRoom(scene, api);
   const tunnels = buildTunnels(scene, api);
+  const themeParks = buildThemeParks(scene, api, park.rides);
+  const learn = buildLearn({ say, sfx });
+  const acDisplay = buildACDisplay();
   api.machineRoom = (name, backFn) => { leaveAll(); liftRoom.enter(name, backFn); };
   setTimeout(() => jail.resume(), 0);
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders, jail.colliders, river.colliders, mtr.colliders, sky.colliders, lohas.colliders, shuttleStand.colliders, liftRoom.colliders, tunnels.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables, river.interactables, mtr.interactables, sky.interactables, lohas.interactables, shuttleStand.interactables, liftRoom.interactables, tunnels.interactables);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders, jail.colliders, river.colliders, mtr.colliders, sky.colliders, lohas.colliders, shuttleStand.colliders, liftRoom.colliders, tunnels.colliders, themeParks.colliders, acDisplay.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables, river.interactables, mtr.interactables, sky.interactables, lohas.interactables, shuttleStand.interactables, liftRoom.interactables, tunnels.interactables, themeParks.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
   const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
@@ -211,6 +218,7 @@ function startGame(myName) {
   api.city = city;
   const traffic = buildTraffic(scene, api);
   const events = buildEvents(scene, api);
+  const peds = buildPeds(scene, api);
   let colStamp = 0;
   function nearCols(x, z, r, withBig = true) {
     colStamp++; const out = withBig ? bigCols.slice() : [];
@@ -651,6 +659,7 @@ function startGame(myName) {
     if (P.seat) return leaveRide();
     if (P.mech && !curInter) return mechPunch();
     if (curInter) { curInter.act(); return; }
+    if (!P.held && !bikeOn && peds.nearest(P.pos, P.face)) return doPunch();
     if (P.held === 'ext') { P.spraying = true; clearTimeout(doAct._s); doAct._s = setTimeout(() => P.spraying = false, 1200); sfx.spray(); }
     else if (P.held === 'phone') openPhone();
     else if (P.held === 'router') { P.wifi = !P.wifi; $('wifi').textContent = P.wifi ? `📶 Wi-Fi 已連接（${remotes.size + 1} 部裝置）` : '📶 Wi-Fi 已關'; toast($('wifi').textContent); }
@@ -992,6 +1001,7 @@ function startGame(myName) {
     rectM({ x0: HARBOUR.x0, x1: HARBOUR.x1, z0: HARBOUR.z0 + 6, z1: HARBOUR.z1 - 6 }, '#4aa3df');
     g.save(); g.setLineDash([6, 4]); g.strokeStyle = '#ffeb3b'; g.lineWidth = Math.max(2, 6 * s);
     TUNNELS.forEach(t => { const [a, b] = w2m(t.x, HARBOUR.z0), [, d] = w2m(t.x, HARBOUR.z1); g.beginPath(); g.moveTo(a, b); g.lineTo(a, d); g.stroke(); }); g.restore();
+    rectM(DISNEY, '#f8bbd0'); rectM(OCEAN, '#b2ebf2');
     rectM(LOHAS, '#e1bee7'); rectM({ x0: 4800, x1: 4894, z0: 2300, z1: 2894 }, '#4aa3df'); rectM({ x0: 4300, x1: 4800, z0: 2830, z1: 2894 }, '#4aa3df');
     // 空中輕軌（藍色虛線）
     g.save(); g.strokeStyle = '#0288d1'; g.lineWidth = Math.max(2, 5 * s); g.setLineDash([8, 5]); g.beginPath();
@@ -1017,6 +1027,7 @@ function startGame(myName) {
     label('✈ 國際機場', 820, s > 0.25 ? -320 : -90, big);
     label('🏘 豪景花園', VOX, s > 0.25 ? VILLAGE.z0 - 25 : VOZ, big);
     label('⚔ 怪獸決戰場', -1700, -100, big);
+    label('🏰 迪士尼樂園', -1600, 2000, big); label('🐬 海洋公園', 2200, 4000, big);
     label('🚢 城市河', -300, -600, big); label('🌊 海港', 600 + 1800, 2800, big);
     if (s > 0.15) TUNNELS.forEach(t => label('🚇' + t.n, t.x, 2800, 13)); label('🌅 日出康城', 4600, 2600, big);
     if (s > 0.12) for (const k in MTR_ENTR) { const e = MTR_ENTR[k]; label(MTR_ST[k][0], e.x, e.z - 16 / s * 0.6, s > 0.5 ? 14 : 11); }
@@ -1094,6 +1105,8 @@ function startGame(myName) {
     else if (inR(ARENA)) { x = arena.gate.x; z = arena.gate.z; name = '怪獸決戰場（閘口）'; }
     else if (inR(RIVER)) { x = river.pier.x; z = river.pier.z; name = '城市河碼頭'; }
     else if (inR(HARBOUR)) { const tn = TUNNELS.reduce((a, b) => Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a); z = z < 2800 ? HARBOUR.z0 - 10 : HARBOUR.z1 + 10; x = tn.x; name = `${tn.n}隧道口`; }
+    else if (inR(DISNEY)) { x = themeParks.gate.disney.x; z = themeParks.gate.disney.z; name = '迪士尼樂園'; }
+    else if (inR(OCEAN)) { x = themeParks.gate.ocean.x; z = themeParks.gate.ocean.z; name = '海洋公園'; }
     else if (inR(LOHAS)) { x = lohas.center.x; z = lohas.center.z; name = '日出康城'; }
     else {
       // 傳送去最近嘅馬路（唔會卡喺大廈入面）
@@ -1314,6 +1327,63 @@ function startGame(myName) {
     if (atSt) { go(); sfx.click(); } else blackout(go, 500);
   }
 
+  // ================= 出拳打路人 / 俾路人打 =================
+  function doPunch() {
+    if (P.mech || P.flight || P.transit || P.seat || P.boat || P.shuttle || P.cable || bikeOn) return;
+    P.punchT = 0.3; sfx.whoosh();
+    if (peds.punch(P.pos, P.face)) { sfx.boom(); shake = Math.max(shake, 0.25); }
+  }
+  api.hitPlayer = dir => {
+    if (api.busy() || bikeOn) return;
+    P.pos.addScaledVector(dir, 2.2); P.vy = 4; P.grounded = false; shake = Math.max(shake, 0.6); sfx.error();
+    const f = $('flash'); f.style.transition = 'none'; f.style.background = 'rgba(255,0,0,.4)'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transition = 'opacity .5s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 550); });
+    toast('💥 俾個路人打咗一拳！快啲走！🏃（揸電單車走得快啲）', 2000);
+    say('Ouch! Run away!', '好痛！快啲走！', { gap: 5000 });
+  };
+
+  // ================= 冷氣機展示（學英文）=================
+  function buildACDisplay() {
+    const B = new THREE.Group(), cols = [], x0 = 30, z0 = 26;
+    const box = (w, h, d, c, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 })); m.position.set(x, y, z); m.castShadow = true; B.add(m); return m; };
+    box(6, 3, 0.3, '#eceff1', x0, 1.5, z0); cols.push({ min: [x0 - 3, 0, z0 - 0.15], max: [x0 + 3, 3, z0 + 0.15] });
+    box(0.8, 0.5, 0.7, '#f5f5f5', x0 - 1.5, 1.6, z0 + 0.4); for (let k = 0; k < 6; k++) box(0.7, 0.02, 0.02, '#90a4ae', x0 - 1.5, 1.45 + k * 0.05, z0 + 0.76);
+    box(1.1, 0.32, 0.25, '#fafafa', x0 + 1.4, 2.4, z0 + 0.3); box(0.9, 0.65, 0.35, '#eceff1', x0 + 1.4, 0.35, z0 + 0.9);
+    const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 16), new THREE.MeshStandardMaterial({ color: '#78909c' })); fan.rotation.x = Math.PI / 2; fan.position.set(x0 + 1.25, 0.35, z0 + 1.08); B.add(fan);
+    const sg = new THREE.Mesh(new THREE.PlaneGeometry(5, 0.7), new THREE.MeshBasicMaterial({ map: TXsign('❄️ 冷氣機展示', '#0277bd', '#fff') })); sg.position.set(x0, 2.75, z0 + 0.16); B.add(sg);
+    scene.add(B);
+    return { colliders: cols, spots: [{ x: x0 - 1.5, z: z0 + 1.6, key: 'acWindow' }, { x: x0 + 1.4, z: z0 + 1.8, key: 'acSplit' }] };
+  }
+
+  // ================= 附近有咩機械可以學英文 =================
+  const learnSpots = [];
+  setTimeout(() => {
+    const kindOf = l => /巨無霸/.test(l) ? 'jumbo' : /戰鬥機/.test(l) ? 'fighter' : /直升機/.test(l) ? 'heli' : /飛機/.test(l) ? 'plane' : /的士/.test(l) ? 'taxi' : /小巴/.test(l) ? 'minibus' : /巴士/.test(l) ? 'bus' : null;
+    airport.interactables.concat(stand.interactables, shuttleStand.interactables, lohas.interactables).forEach(it => { const k = kindOf(it.label()); if (k) learnSpots.push({ x: it.pos.x, y: it.pos.y, z: it.pos.z, r: k === 'jumbo' ? 16 : 7, key: k }); });
+    acDisplay.spots.forEach(a => learnSpots.push({ ...a, y: 0, r: 3.2 }));
+    learnSpots.push({ x: river.pier.x, y: 0, z: river.pier.z - 6, r: 9, key: 'boat' });
+    learnSpots.push({ x: world.cable.plat.x, y: world.cable.plat.y, z: world.cable.plat.z, r: 8, key: 'cable' }, { x: world.cable.ground.x, y: 0, z: world.cable.ground.z, r: 4, key: 'cable' });
+    learnSpots.push({ x: -186, y: 0, z: 9, r: 6, key: 'wheel' }, { x: arena.base.x, y: 0, z: arena.base.z, r: 8, key: 'mech' });
+    sky.stations.forEach(si => learnSpots.push({ x: si.plat.x, y: si.plat.y, z: si.plat.z, r: 12, key: 'sky' }));
+  }, 0);
+  function learnNear() {
+    if (P.flight || P.transit || P.boat || P.shuttle || P.cable || P.seat || P.pass || sky.riding() || mtr.riding() || school.active() || jail.active() || learn.isOpen()) return null;
+    if (liftRoom.inside(P.pos)) return 'machine';
+    if (lifts.insideCar(P.pos) || hotel.insideCar(P.pos)) return 'lift';
+    if (P.mech) return 'mech';
+    if (bikeOn) return 'bike';
+    if (mtr.inside(P.pos)) return 'mtr';
+    const p = P.pos; let best = null, bd = 1e9;
+    const cand = (x, z, r, key, y = 0) => { const d = Math.hypot(p.x - x, p.z - z); if (d < r && d < bd && Math.abs(p.y - y) < 5) { bd = d; best = key; } };
+    for (const s2 of learnSpots) cand(s2.x, s2.z, s2.r, s2.key, s2.y);
+    PARK.forEach(v => cand(v.x, v.z, v.k === 'jumbo' ? 16 : v.k === 'bike' ? 2.5 : 7, v.k, v.y));
+    campers.list.forEach(c => c.inter && cand(c.inter.pos.x, c.inter.pos.z, 7, 'camper', c.inter.pos.y));
+    traffic.cars.forEach(c => { if (c.alive && !c.knock) cand(c.x, c.z, 4.5, c.kind || 'sedan'); });
+    if (events.truck.visible) cand(events.truck.position.x, events.truck.position.z, 7, 'fire');
+    if (events.pcar.visible) cand(events.pcar.position.x, events.pcar.position.z, 4.5, 'police');
+    if (Math.abs(p.x) < 5000 && Math.abs(p.z) < 5000) for (const j of junctionsNear(p.x, p.z, 20)) [[-7.6, -7.6], [7.6, 7.6], [7.6, -7.6], [-7.6, 7.6]].forEach(([dx, dz]) => cand(j.x + dx, j.z + dz, 2.6, 'light'));
+    return best;
+  }
+
   // ================= 沖紅燈：罰 $100；唔夠錢就坐監 3 分鐘 =================
   function redLight() {
     sfx.siren();
@@ -1489,7 +1559,7 @@ function startGame(myName) {
   function hitFx() { const f = $('flash'); f.style.transition = 'none'; f.style.background = 'radial-gradient(rgba(255,255,255,.6),transparent 60%)'; f.style.opacity = 0.7; requestAnimationFrame(() => { f.style.transition = 'opacity .4s'; f.style.opacity = 0; setTimeout(() => f.style.background = '', 450); }); }
   $('mkPunch').onclick = () => mechPunch(); $('mkBeam').onclick = () => mechBeam();
   $('mkShield').onclick = () => toggleShield(); $('mkDashL').onclick = () => mechDash(-1); $('mkDashR').onclick = () => mechDash(1); $('mkOff').onclick = () => { if (P.mech && performance.now() - P.mech.since > 1500) mechOff(); };
-  addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.code === 'KeyF') mechPunch(); if (e.code === 'KeyR') mechBeam(); });
+  addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.code === 'KeyF') { if (P.mech) mechPunch(); else doPunch(); } if (e.code === 'KeyR') mechBeam(); });
   function mechUpdate(dt, moving) {
     const M = P.mech;
     if (!inStage(P.pos)) return mechOff('🙂 行出咗決戰場，變返人');
@@ -1538,12 +1608,12 @@ function startGame(myName) {
     } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
   }
 
-  if (location.search.includes('debug')) window.__g = { traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  if (location.search.includes('debug')) window.__g = { learn, peds, themeParks, learnNear, doPunch, world, traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
   const ray = new THREE.Raycaster();
-  let elapsed = 0, honkT = 1;
+  let elapsed = 0, honkT = 1, learnT = 0; const lastRam = new V3();
   function loop() { requestAnimationFrame(loop); frame(); }
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); elapsed += dt;
@@ -1571,7 +1641,7 @@ function startGame(myName) {
     let turn = 0;
     if (mv.lengthSq() > 0.01) { const tf = Math.atan2(mv.x, mv.z); let df = tf - P.face; df = Math.atan2(Math.sin(df), Math.cos(df)); turn = df; P.face += df * Math.min(1, dt * (bikeOn ? 7 : 14)); }
     airport.update(P.pos); village.update(P.pos); vault.update(P.pos); apartments.update(P.pos); school.update(dt, P.pos);
-    liftRoom.update(P.pos); tunnels.update(dt, P.pos);
+    liftRoom.update(P.pos); tunnels.update(dt, P.pos); themeParks.update(dt, T / 1000, P.pos);
     jail.update(dt, P.pos); river.update(dt, T, P.pos); mtr.update(dt, P.pos); sky.update(dt, P.pos); lohas.update(P.pos);
     const mtrInfo = mtr.step(dt);
     if (P.boat) boatStep(dt);
@@ -1629,6 +1699,7 @@ function startGame(myName) {
       } else {
         myBike.visible = false;
         animateAvatar(me, P.anim, dt, Math.min(1.4, im + 0.3));
+        if (P.punchT > 0) { P.punchT -= dt; me.userData.armR.rotation.x = -1.7; me.userData.armR.rotation.z = 0; }
       }
       if (P.mech) mechUpdate(dt, mv.lengthSq() > 0.01);
     }
@@ -1638,6 +1709,16 @@ function startGame(myName) {
       if (tr.red) redLight();
       if (tr.honk) { honkT -= dt; if (honkT <= 0) { honkT = 4; sfx.horn(); } } else honkT = 0.8; }
     events.update(dt, P.pos, school.active() || jail.active() || api.busy());
+    peds.update(dt, P.pos, school.active() || jail.active() || mtr.inside(P.pos) || tunnels.inside(P.pos));
+    // 好似 GTA 咁：揸電單車 / 機甲 / 飛機撞飛啲車、消防車、警車、空中輕軌
+    { const v = trTmp.copy(P.pos).sub(lastRam).divideScalar(Math.max(dt, 1e-3)); lastRam.copy(P.pos);
+      const sp = Math.hypot(v.x, v.z), can = (bikeOn || P.mech || (P.flight && P.pos.y < 30)) && sp > (P.mech ? 1 : 4) && sp < 400;
+      if (can) {
+        const R = P.mech ? 7 : P.flight ? ({ jumbo: 9, plane: 4, fighter: 4, heli: 4 }[P.flight.kind]) : 1.1;
+        const n = traffic.knock(P.pos, v, R) + events.knock(P.pos, v, R) + sky.knock(P.pos, v, R);
+        if (n) { sfx.boom(); shake = Math.max(shake, 0.5); toast(n > 1 ? `💥 一下撞飛咗 ${n} 架車！` : '💥 撞飛咗！', 1500); say('Crash! Boom! Look out!', '撞飛咗！小心呀！', { gap: 8000 }); }
+      } }
+    learnT -= dt; if (learnT <= 0) { learnT = 0.25; learn.setNear(learnNear()); }
     arena.update(dt, T, P.pos, monTargetPos());
     if (myDog) myDog.visible = !(P.cable || P.boat || P.shuttle || P.transit || P.flight || P.seat || P.pass || sky.riding());
     dogFollow(myDog, P.pos, P.face, dt);
@@ -1737,7 +1818,7 @@ function startGame(myName) {
 
     // 互動提示
     curInter = P.seat || P.flight || P.transit || P.pass || P.boat || P.shuttle || P.cable || sky.riding() ? null : (findInteract() || passInteract());
-    const lbl = P.cable ? (cabinAtStation() === P.cable.i ? '🚪 落纜車' : '⏩ 返去纜車站') : P.boat ? '⏩ 返碼頭' : P.shuttle ? '⏩ 即刻到' : sky.riding() ? (sky.docked() ? '🚪 落車' : null) : (mtr.riding() && !curInter) ? '⏩ 即刻到站' : P.transit ? '⏩ 即刻到站' : P.pass ? '🚪 落車' : P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : null);
+    const lbl = P.cable ? (cabinAtStation() === P.cable.i ? '🚪 落纜車' : '⏩ 返去纜車站') : P.boat ? '⏩ 返碼頭' : P.shuttle ? '⏩ 即刻到' : sky.riding() ? (sky.docked() ? '🚪 落車' : null) : (mtr.riding() && !curInter) ? '⏩ 即刻到站' : P.transit ? '⏩ 即刻到站' : P.pass ? '🚪 落車' : P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : (!bikeOn && peds.nearest(P.pos, P.face) ? '👊 打佢' : null));
     $('act').classList.toggle('hidden', !lbl); if (lbl && $('act').textContent !== lbl) $('act').textContent = lbl;
 
     // 電梯面板

@@ -69,7 +69,7 @@ function trainAt(t) {
   return { s: seg.s0 + Math.min(len, d), at: -1, wait: 0 };
 }
 
-function buildTrain() {
+export function buildTrain() {
   const g = new THREE.Group(), body = std('#f5f7f8', { metalness: 0.4, roughness: 0.3 }), blue = std('#0288d1'), yellow = std('#ffca28'), glass = new THREE.MeshStandardMaterial({ color: '#7fc6ff', transparent: true, opacity: 0.45, metalness: 0.3, roughness: 0.05 });
   const add = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
   for (let k = -1; k <= 1; k++) {
@@ -177,8 +177,26 @@ export function buildSkytrain(scene, api) {
       const st = trainState(k), yaw = skyAt(st.s, t);
       m.position.set(t.x, DECK + 0.05, t.z);
       let d = yaw - m.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); m.rotation.y += Math.abs(d) > 1 ? d : d * Math.min(1, dt * 6);
+      const K = m.userData.k;
+      if (K) {   // 俾人撞到：彈開、側側哋，之後慢慢返返路軌
+        K.t -= dt; K.off.addScaledVector(K.v, dt); K.v.multiplyScalar(1 - dt * 2.5); K.v.y -= 6 * dt; if (K.off.y < 0) { K.off.y = 0; K.v.y = 0; }
+        const back = Math.max(0, Math.min(1, K.t / 1.2)); m.position.addScaledVector(K.off, back); m.rotation.z = K.tilt * back * Math.sin(K.t * 8 + 1) ** 2;
+        if (K.t <= 0) { m.userData.k = null; m.rotation.z = 0; }
+      }
     });
   }
+  function knock(p, vel, R) {
+    let n = 0; const sp = Math.hypot(vel.x, vel.z);
+    trains.forEach(m => {
+      if (!m.visible || m.userData.k || Math.abs(p.y - (DECK + 2)) > 4 + R * 0.5) return;
+      const dx = p.x - m.position.x, dz = p.z - m.position.z, c = Math.cos(m.rotation.y), s2 = Math.sin(m.rotation.y);
+      const lx = dx * c - dz * s2, lz = dx * s2 + dz * c;
+      if (Math.abs(lz) > 29 || Math.abs(lx) > 1.6 + R) return;
+      const side = lx > 0 ? -1 : 1, nx = side * c, nz = -side * s2;
+      m.userData.k = { off: new V3(), v: new V3(nx * (6 + sp * 0.3), 3, nz * (6 + sp * 0.3)), tilt: side * 0.35, t: 3 }; n++;
+    });
+    return n;
+  }
   const docked = () => ride ? trainState(ride.k).at >= 0 : false;
-  return { colliders: B.cols, interactables: inter, update, step, alight, cancel, riding: () => !!ride, docked, stations: stInfo, lap: LAP };
+  return { knock, colliders: B.cols, interactables: inter, update, step, alight, cancel, riding: () => !!ride, docked, stations: stInfo, lap: LAP };
 }

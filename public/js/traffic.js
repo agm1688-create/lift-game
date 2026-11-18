@@ -105,7 +105,7 @@ export function buildTraffic(scene, api) {
   // ===== 車 =====
   const NCAR = api.isTouch ? 14 : 22;
   const cars = [];
-  for (let k = 0; k < NCAR; k++) { const m = buildCar(k); m.visible = false; scene.add(m); cars.push({ m, alive: false, k }); }
+  for (let k = 0; k < NCAR; k++) { const m = buildCar(k); m.visible = false; scene.add(m); cars.push({ m, alive: false, k, kind: CAR_TYPES[k % CAR_TYPES.length][0] }); }
   // 揀一段離玩家 120–380 米、唔喺禁區嘅馬路放車
   function spawn(c, p) {
     for (let tries = 0; tries < 30; tries++) {
@@ -175,11 +175,33 @@ export function buildTraffic(scene, api) {
   function colliders() {
     const out = [];
     for (const c of cars) {
-      if (!c.alive) continue; const u = c.m.userData, along = DIRS[c.d][0] !== 0;
+      if (!c.alive || c.knock) continue; const u = c.m.userData, along = DIRS[c.d][0] !== 0;
       const hx = (along ? u.L : u.W) / 2, hz = (along ? u.W : u.L) / 2;
       out.push({ min: [c.x - hx, 0, c.z - hz], max: [c.x + hx, u.H, c.z + hz] });
     }
     return out;
+  }
+
+  // ===== 好似 GTA 咁撞飛啲車 =====
+  function knock(p, vel, R) {
+    let n = 0; const sp = Math.hypot(vel.x, vel.z);
+    for (const c of cars) {
+      if (!c.alive || c.knock) continue;
+      const u = c.m.userData, along = DIRS[c.d][0] !== 0, hx = (along ? u.L : u.W) / 2, hz = (along ? u.W : u.L) / 2;
+      const dx = Math.max(0, Math.abs(p.x - c.x) - hx), dz = Math.max(0, Math.abs(p.z - c.z) - hz);
+      if (Math.hypot(dx, dz) > R || p.y > u.H + 3) continue;
+      const ax = c.x - p.x, az = c.z - p.z, al = Math.hypot(ax, az) || 1;
+      c.knock = { vx: vel.x * 0.8 + ax / al * (6 + sp * 0.3), vz: vel.z * 0.8 + az / al * (6 + sp * 0.3), vy: 4 + sp * 0.35, spin: (Math.random() - 0.5) * 10, roll: (Math.random() - 0.5) * 6, y: 0, t: 3.5 };
+      n++;
+    }
+    return n;
+  }
+  function knockStep(c, dt) {
+    const K = c.knock; K.t -= dt;
+    c.x += K.vx * dt; c.z += K.vz * dt; K.y += K.vy * dt; K.vy -= 18 * dt;
+    if (K.y < 0) { K.y = 0; K.vy = -K.vy * 0.35; K.vx *= 0.7; K.vz *= 0.7; K.spin *= 0.6; K.roll *= 0.5; }
+    c.m.position.set(c.x, K.y, c.z); c.m.rotation.y += K.spin * dt; c.m.rotation.z += K.roll * dt;
+    if (K.t <= 0) { c.knock = null; c.alive = false; c.m.visible = false; c.m.rotation.set(0, 0, 0); }
   }
 
   // ===== 沖紅燈偵測（只計揸電單車）=====
@@ -213,9 +235,9 @@ export function buildTraffic(scene, api) {
     for (const c of cars) {
       if (!inWorld) { c.m.visible = false; c.alive = false; continue; }
       if (!c.alive || Math.hypot(c.x - p.x, c.z - p.z) > 430) { if (Math.random() < 0.2) spawn(c, p); continue; }
-      stepCar(c, dt, t, p);
+      if (c.knock) knockStep(c, dt); else stepCar(c, dt, t, p);
     }
     return { red: checkRed(p, t, riding && inWorld), honk: playerHold };
   }
-  return { update, colliders, lightAt, cars };
+  return { update, colliders, lightAt, cars, knock };
 }

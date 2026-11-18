@@ -13,7 +13,7 @@ export const LINE_OF = Object.fromEntries(LINES.map(l => [l.id, l]));
 // 每個站喺邊條綫
 export const LINES_AT = {};
 LINES.forEach(l => l.r.forEach(r => r.forEach(k => { (LINES_AT[k] = LINES_AT[k] || new Set()).add(l.id); })));
-const OVERRIDE = { LHP: [4428, 2600, -Math.PI / 2] };   // 康城站：喺日出康城商場門口
+const OVERRIDE = { LHP: [4428, 2600, -Math.PI / 2], DIS: [-1650, 1717, Math.PI], OCP: [2150, 3717, Math.PI] };   // 康城、迪士尼、海洋公園：站喺門口   // 康城站：喺日出康城商場門口
 
 // ---------- 入口位置：真實位置 → 擺喺最近條馬路旁邊嘅行人路 ----------
 export const ENTR = {};
