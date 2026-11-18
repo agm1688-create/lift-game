@@ -1463,6 +1463,7 @@ function startGame(myName) {
   }, 0);
   function learnNear() {
     if (P.flight || P.transit || P.boat || P.shuttle || P.cable || P.seat || P.pass || sky.riding() || mtr.riding() || school.active() || jail.active() || learn.isOpen()) return null;
+    for (const f of FAN_SPOTS) if (Math.hypot(P.pos.x - f.x, P.pos.z - f.z) < 1.1 && Math.abs(P.pos.y - f.y) < 2) return 'fan';
     { let hb = null, hd = 1e9; for (const h of house.spots) { const d = Math.hypot(P.pos.x - h.x, P.pos.z - h.z); if (d < h.r && d < hd && Math.abs(P.pos.y - h.y) < 1.6) { hd = d; hb = h.key; } } if (hb) return hb; }
     for (const f of FAN_SPOTS) if (Math.abs(P.pos.x - f.x) < 2.4 && Math.abs(P.pos.z - f.z) < 2.4 && Math.abs(P.pos.y - f.y) < 3) return 'fan';
     if (liftRoom.inside(P.pos)) return 'machine';
