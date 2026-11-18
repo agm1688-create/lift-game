@@ -48,6 +48,43 @@ const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches;
 const V3 = THREE.Vector3;
 
+// ================= 全屏 =================
+// iPad / Android / 電腦：用 Fullscreen API；iPhone 嘅 Safari 唔支援網頁全屏，要「加入主畫面」由 icon 開先有全屏
+const isIOS = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+function enterFullscreen(showHelp) {
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) { if (showHelp) fsHelp(); return; }
+  try {
+    Promise.resolve(req.call(el)).then(() => { try { screen.orientation?.lock?.('landscape')?.catch?.(() => { }); } catch { } })
+      .catch(() => { if (showHelp) fsHelp(); });
+    // 有啲 iPad 唔會報錯但又冇全屏：半秒後檢查
+    if (showHelp) setTimeout(() => { if (!fsEl()) fsHelp(); }, 700);
+  } catch { if (showHelp) fsHelp(); }
+}
+function exitFullscreen() { const f = document.exitFullscreen || document.webkitExitFullscreen; if (f) f.call(document); }
+function fsHelp() {
+  let el = document.getElementById('fsHelp');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'fsHelp';
+    el.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:12px;font-family:system-ui,sans-serif';
+    document.body.appendChild(el);
+  }
+  const ios = isIOS;
+  el.innerHTML = `<div style="background:#13233a;border:3px solid #ffc83d;border-radius:16px;color:#fff;max-width:520px;width:100%;max-height:94dvh;overflow:auto;padding:14px 18px;font-size:16px;line-height:1.5">
+    <div style="font-size:20px;font-weight:700;color:#ffc83d;margin-bottom:6px">📱 點樣全屏玩？</div>
+    ${ios ? `<div>iPhone 嘅 Safari <b>唔支援網頁全屏</b>（Apple 嘅限制），所以撳全屏掣冇反應。</div>
+    <div style="margin-top:8px;font-weight:700">✅ 方法一（最好，真正全屏）：加入主畫面</div>
+    <ol style="margin:4px 0 0 20px;padding:0"><li>喺 Safari 撳 <b>分享</b> 掣（⬆️ 方格加箭咀）</li><li>揀 <b>「加入主畫面」</b></li><li>撳 <b>「加入」</b></li><li>返去手機主畫面，撳 <b>「搭Lift」</b> 個金色圖示開遊戲 → 就會全屏，冇網址列！</li></ol>
+    <div style="margin-top:8px;font-weight:700">方法二：收埋 Safari 工具列</div>
+    <div>打橫部手機，撳網址列左邊嘅 <b>「aA」</b> → <b>「隱藏工具列」</b>。</div>`
+    : `<div>呢個瀏覽器唔俾網頁全屏。可以試下：</div><ol style="margin:4px 0 0 20px;padding:0"><li>用 Chrome 開遊戲再撳 ⛶ 全屏</li><li>或者喺瀏覽器選單揀「加到主畫面 / 安裝 App」，之後由 icon 開就會全屏</li></ol>`}
+    <button id="fsHelpOk" style="margin-top:12px;width:100%;padding:10px;border:0;border-radius:12px;background:#ffc83d;color:#222;font-size:17px;font-weight:700">知道喇</button></div>`;
+  el.style.display = 'flex';
+  el.querySelector('#fsHelpOk').onclick = () => el.style.display = 'none';
+}
+
 // ================= 開始畫面：角色設計 =================
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
 initEnglish(store);
@@ -87,7 +124,7 @@ $('go').onclick = () => {
   const name = ($('name').value.trim() || '玩家' + Math.floor(Math.random() * 1000)).slice(0, 16);
   store.set('look', look); store.set('name', name);
   initAudio(); unlockSpeech();
-  if (isTouch) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => { });
+  if (isTouch) enterFullscreen(false);
   pv.run = false; pv.r.dispose();
   $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
   startGame(name);
@@ -566,7 +603,12 @@ function startGame(myName) {
   }
   $('btnFP').onclick = toggleFP;
   addEventListener('keydown', e => { if (e.code === 'KeyV' && e.target.tagName !== 'INPUT') toggleFP(); });
-  $('btnFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => { }); };
+  $('btnFull').onclick = () => {
+    sfx.click();
+    if (fsEl()) return exitFullscreen();
+    if (isStandalone()) return toast('📱 而家已經係全屏 App 模式', 2500);
+    enterFullscreen(true);
+  };
   $('btnSize').onclick = () => $('sizeBox').classList.toggle('hidden');
   $('sizeRange').oninput = e => { P.scale = +e.target.value; };
   $('zoomRange').oninput = e => { camDist = +e.target.value; };

@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="搭Lift">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>搭 Lift 遊戲</title>
 <style>
   :root { --gold:#ffc83d; --bg:rgba(10,14,24,.72); --fg:#fff; }
@@ -201,7 +206,8 @@
       await screen.orientation.lock('landscape');
       msg.textContent = '';
     } catch (e) {
-      msg.innerHTML = '呢部手機唔俾網頁自動轉屏 😅<br>請開「自動旋轉」再將手機打橫，或者撳下面「直向照玩」';
+      const ios = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+      msg.innerHTML = ios ? 'iPhone 唔俾網頁自動轉屏 😅<br>請由右上角向下掃開「控制中心」，關咗 🔒「螢幕方向鎖定」，再將手機打橫' : '呢部手機唔俾網頁自動轉屏 😅<br>請開「自動旋轉」再將手機打橫，或者撳下面「直向照玩」';
     }
   };
   document.getElementById('rotSkip').onclick = () => document.body.classList.add('portraitOk');
