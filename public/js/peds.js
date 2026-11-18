@@ -7,7 +7,7 @@ import { inExcl, segOK } from './traffic.js';
 
 const V3 = THREE.Vector3;
 const lineOf = v => Math.round((v + 100) / CHUNK) * CHUNK - 100;
-const TOWN_SPOTS = [[-12, 6], [12, 6], [-6, 1], [6, -3], [-15, -6], [15, -8], [2, 4], [-18, 12], [18, 14], [25, 2], [-10, -2], [10, 10], [-25, 8], [28, 22], [8, 24]];
+const TOWN_SPOTS = [[-12, 6], [12, 6], [-6, 1], [6, -3], [-15, -6], [15, -8], [2, 4], [-27, 12], [18, 14], [25, 2], [-10, -2], [10, 10], [-25, 8], [28, 22], [8, 24]];
 const SAY_HIT = [['Ouch! Hey, why did you hit me?', '哎呀！你做咩打我？'], ['Ow! That hurts! Come back here!', '好痛呀！你咪走！'], ['Hey! Stop that! You are so rude!', '喂！停手！你好冇禮貌！']];
 const rand = (a, b) => a + Math.random() * (b - a);
 

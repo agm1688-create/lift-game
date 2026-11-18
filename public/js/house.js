@@ -26,7 +26,7 @@ export function buildHouse(scene, api) {
     hb(7.6, 4.5, W - T, 7.5, y + 0.02, y + 0.03, tile, false); hb(7.6, 10.6, W - T, D - T, y + 0.02, y + 0.03, tile, false);
     // 外牆（黃金）+ 窗
     hb(0, 0, T, 9.9, y, top, GOLD); hb(0, 11.6, T, D, y, top, GOLD); hb(0, 9.9, T, 11.6, y + 2.4, top, GOLD); hb(0, 0, W, T, y, top, GOLD);   // 左牆：露台門（電視 / 梳化嗰邊）
-    hb(W - T, 0, W, D, y, top, GOLD);   // 右牆（飯枱嗰邊）：成幅牆
+    hb(W - T, 0, W, 7.65, y, top, GOLD); hb(W - T, 8.85, W, D, y, top, GOLD); hb(W - T, 7.65, W, 8.85, y + 2.3, top, GOLD);   // 右牆（飯枱嗰邊）：門口通室外樓梯
     if (L === 0) { hb(0, D - T, 5.6, D, y, top, GOLD); hb(7.0, D - T, W, D, y, top, GOLD); hb(5.6, D - T, 7.0, D, y + 2.3, top, GOLD); }
     else hb(0, D - T, W, D, y, top, GOLD);
     [[2.5, 0], [8.5, 0]].forEach(([u]) => hb(u - 0.9, -0.03, u + 0.9, 0.02, y + 1.0, y + 2.2, glass, false));
@@ -55,9 +55,9 @@ export function buildHouse(scene, api) {
     inter.push({ pos: at(5, 8.4, y), r: 1.3, label: () => '📹 睇屋企 CCTV', act: () => api.houseCctv() });
     spot(5, 8.4, y, 'cctv', 1.3);
     // 窗口式冷氣機（客廳外牆）
-    hb(W - 0.55, 8.6, W + 0.15, 9.3, y + 1.8, y + 2.35, std('#f5f5f5')); for (let k = 0; k < 5; k++) hb(W - 0.58, 8.7, W - 0.56, 9.2, y + 1.86 + k * 0.09, y + 1.88 + k * 0.09, std('#90a4ae'), false);   // 飯枱嗰幅牆
-    spot(W - 1.2, 8.95, y, 'acWindow', 1.3);
-    { const [fx, fz] = P(W - T - 0.02, 10.1); exhaustFan(B, fx, y + 2.3, fz, '+x', y); }   // 前方後圓抽氣扇（同一幅牆）
+    hb(W - 0.55, 9.25, W + 0.15, 9.95, y + 1.8, y + 2.35, std('#f5f5f5')); for (let k = 0; k < 5; k++) hb(W - 0.58, 9.35, W - 0.56, 9.85, y + 1.86 + k * 0.09, y + 1.88 + k * 0.09, std('#90a4ae'), false);   // 飯枱嗰幅牆
+    spot(W - 1.2, 9.6, y, 'acWindow', 1.2);
+    { const [fx, fz] = P(W - T - 0.02, 10.28); exhaustFan(B, fx, y + 2.55, fz, '+x', y); }   // 前方後圓抽氣扇（同一幅牆）
     // 消防鐘 + 消防喉轆（入口旁）
     { const [bx, bz] = P(4.9, D - T - 0.05); const bell = new THREE.CylinderGeometry(0.16, 0.16, 0.08, 18); bell.rotateX(Math.PI / 2); bell.translate(bx, y + 2.1, bz - 0.04); B.add(bell, red); }
     hb(4.75, D - T - 0.08, 5.05, D - T - 0.02, y + 1.3, y + 1.6, red, false);
@@ -66,11 +66,6 @@ export function buildHouse(scene, api) {
     { const [hx, hz] = P(7.3, D - T - 0.25); const reel = new THREE.CylinderGeometry(0.32, 0.32, 0.16, 20); reel.rotateX(Math.PI / 2); reel.translate(hx, y + 1.25, hz); B.add(reel, red); const hub = new THREE.CylinderGeometry(0.1, 0.1, 0.2, 12); hub.rotateX(Math.PI / 2); hub.translate(hx, y + 1.25, hz); B.add(hub, std('#fafafa')); }
     hb(7.0, D - T - 0.05, 7.6, D - T - 0.02, y + 0.8, y + 1.7, std('#b71c1c'), false);
     spot(7.3, 12.0, y, 'hose', 1.2);
-    // 樓梯（客廳角落：上 / 落一層）
-    for (let k = 0; k < 7; k++) hb(0.25, 7.65 + k * 0.3, 1.4, 7.95 + k * 0.3, y, y + 0.2 + k * 0.4, std('#8d6e63'), false);
-    hb(1.4, 7.65, 1.48, 9.8, y + 0.9, y + 2.9, IM.steel, false);
-    inter.push({ pos: at(1.0, 9.6, y), r: 1.2, label: () => L < N - 1 ? `⬆ 上 ${L + 2} 樓` : '（已經係頂樓）', act: () => api.houseFloor(L + 1) });
-    if (L > 0) inter.push({ pos: at(2.2, 8.4, y), r: 1.0, label: () => `⬇ 落 ${L} 樓`, act: () => api.houseFloor(L - 1) });
     // ---------- 廚房 ----------
     hb(10.2, 10.8, W - T, 12.9, y, y + 0.9, IM.wood); hb(10.15, 10.75, W - T, 12.95, y + 0.9, y + 0.95, IM.marble, false);
     [11.3, 11.8].forEach(v => { const [x, z] = P(10.5, v); const c = new THREE.CylinderGeometry(0.15, 0.15, 0.03, 14); c.translate(x, y + 0.97, z); B.add(c, IM.black); });
@@ -105,6 +100,22 @@ export function buildHouse(scene, api) {
     spot(-0.7, 10.4, y, 'acSplit', 1.0);
     { const [x, z] = P(-0.8, 9.95); const pot = new THREE.CylinderGeometry(0.22, 0.18, 0.4, 10); pot.translate(x, y + 0.2, z); B.add(pot, IM.pot); const pl = new THREE.SphereGeometry(0.35, 10, 8); pl.translate(x, y + 0.7, z); B.add(pl, IM.plant); }
   }
+  // 室外樓梯（飯枱嗰邊外面，來回兩段：地下 → 2 樓 → 3 樓），每層有門口入屋
+  {
+    const S = std('#d9d2c3'), RISE = FH / 8, RUN = 0.8, A = W, Bc = W + 1.6, C = W + 3.2, V0 = 7.4, V1 = 9.0, V2 = V1 + 8 * RUN;
+    for (let k = 0; k < 8; k++) hb(A, V2 - (k + 1) * RUN, Bc, V2 - k * RUN, 0, (k + 1) * RISE, S);              // 第 1 段：向屋後面行上 2 樓
+    hb(A, V0, C, V1, FH - 0.25, FH, S);                                                                          // 2 樓平台（門口外）
+    for (let k = 0; k < 8; k++) hb(Bc, V1 + k * RUN, C, V1 + (k + 1) * RUN, FH, FH + (k + 1) * RISE, S);       // 第 2 段：向廣場行上 3 樓
+    hb(A, V2, C, V2 + 1.6, 2 * FH - 0.25, 2 * FH, S);                                                            // 頂平台
+    hb(A, V0, Bc, V2, 2 * FH - 0.25, 2 * FH, S);                                                                 // 3 樓行人走廊（喺第 1 段上面）
+    hb(W, V0 - 0.1, C, V0, 0, 0.3, S);                                                                           // 地下門口外地台
+    // 黃金扶手
+    hb(C - 0.08, V0, C, V2 + 1.6, FH, FH + 1.1, GOLD); hb(C - 0.08, V0, C, V2 + 1.6, 2 * FH, 2 * FH + 1.1, GOLD);
+    hb(A, V2 + 1.52, C, V2 + 1.6, 2 * FH, 2 * FH + 1.1, GOLD); hb(Bc - 0.04, V1, Bc + 0.04, V2, 2 * FH, 2 * FH + 1.1, GOLD);
+    hb(A, V0 - 0.08, C, V0, FH, FH + 1.1, GOLD); hb(A, V0 - 0.08, C, V0, 2 * FH, 2 * FH + 1.1, GOLD);
+    for (let v = V0; v <= V2 + 1.6; v += 2) { hb(C - 0.12, v - 0.06, C, v + 0.06, 0, 2 * FH + 1.1, GOLD, false); }
+    { const [x, z] = P(Bc, V2 + 1.65); sign(B, x, 2.6, z, 2.6, 0.5, signMat('⬆ 樓梯上 2 / 3 樓', '#5a1a0e', '#ffd77a'), '-z'); }
+  }
   // 屋頂（黃金）+ 招牌
   hb(-0.3, -0.3, W + 0.3, D + 0.3, N * FH - 0.2, N * FH + 0.4, GOLD);
   for (let u = 0.5; u <= W - 0.5; u += 1.5) { const [x, z] = P(u, D + 0.2); const s = new THREE.SphereGeometry(0.28, 10, 8); s.translate(x, N * FH + 0.75, z); B.add(s, GOLD); }
@@ -114,8 +125,8 @@ export function buildHouse(scene, api) {
   const cams = [];
   { const c = new THREE.PerspectiveCamera(70, 4 / 3, 0.1, 400); const [x, z] = P(6.3, D + 6); c.position.set(x, 4, z); const [lx, lz] = P(6.3, D); c.lookAt(lx, 1.2, lz); cams.push({ name: '柏熙屋企 門口', cam: c }); }
   for (let L = 0; L < N; L++) { const c = new THREE.PerspectiveCamera(75, 4 / 3, 0.05, 60); const [x, z] = P(10.6, 12.6); c.position.set(x, L * FH + 2.7, z); const [lx, lz] = P(3, 9); c.lookAt(lx, L * FH + 0.8, lz); cams.push({ name: `柏熙屋企 ${L + 1} 樓客廳`, cam: c }); }
-  const inside = p => { const u = X0 - p.x, v = D - (p.z - Z0); return u > -1.5 && u < W + 0.1 && v > -0.1 && v < D + 0.1 && p.y > -1 && p.y < N * FH; };
+  const inside = p => { const u = X0 - p.x, v = D - (p.z - Z0); return u > -1.5 && u < W - 0.05 && v > -0.1 && v < D + 0.1 && p.y > -1 && p.y < N * FH; };
   const floorOf = p => Math.max(0, Math.min(N - 1, Math.floor((p.y + 0.5) / FH)));
-  const stairPos = L => at(1.9, 10.2, L * FH + 0.05);
+  const stairPos = L => at(W - 1.0, 8.25, L * FH + 0.05);
   return { colliders: B.cols, interactables: inter, spots, cams, inside, floorOf, stairPos, door: at(6.3, D + 1.2, 0.1) };
 }
