@@ -39,6 +39,7 @@ import { buildPeds } from './peds.js';
 import { buildThemeParks } from './themeparks.js';
 import { buildLiftFix } from './liftfix.js';
 import { buildQuiz } from './quiz.js';
+import { buildHouse } from './house.js';
 import { FAN_SPOTS, exhaustFanMesh } from './interiors.js';
 import { HOTEL } from './hotel.js';
 import { junctionsNear } from './traffic.js';
@@ -233,6 +234,10 @@ function startGame(myName) {
   const lohas = buildLohas(scene, api);
   const shuttleStand = buildShuttleStand();
   const liftRoom = buildLiftRoom(scene, api);
+  const house = buildHouse(scene, api);
+  api.houseFloor = L => { if (L < 0 || L > 2) return; sfx.door(); blackout(() => { const q = house.stairPos(L); api.teleport(q.x, q.y, q.z); toast(`🏠 柏熙屋企 ${L + 1} 樓`); }, 400); };
+  api.houseCctv = () => { cctvMode = cctvMode >= 3 && cctvMode < 2 + house.cams.length ? cctvMode + 1 : 3; showCctv(); };
+  api.homeSafe = () => homeSafe();
   const tunnels = buildTunnels(scene, api);
   const themeParks = buildThemeParks(scene, api, park.rides);
   const learn = buildLearn({ say, sfx });
@@ -243,8 +248,8 @@ function startGame(myName) {
   api.machineRoom = (name, backFn) => { leaveAll(); liftRoom.enter(name, backFn); };
   setTimeout(() => jail.resume(), 0);
   campers.list.forEach(c => c.inter.show = () => P.camper !== c.k);
-  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders, jail.colliders, river.colliders, mtr.colliders, sky.colliders, lohas.colliders, shuttleStand.colliders, liftRoom.colliders, tunnels.colliders, themeParks.colliders, acDisplay.colliders);
-  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables, river.interactables, mtr.interactables, sky.interactables, lohas.interactables, shuttleStand.interactables, liftRoom.interactables, tunnels.interactables, themeParks.interactables);
+  const staticCols = world.colliders.concat(lifts.staticCols, shops.colliders, hotel.colliders, park.colliders, airport.colliders, arena.colliders, village.colliders, vault.colliders, apartments.colliders, stand.colliders, school.colliders, jail.colliders, river.colliders, mtr.colliders, sky.colliders, lohas.colliders, shuttleStand.colliders, house.colliders, liftRoom.colliders, tunnels.colliders, themeParks.colliders, acDisplay.colliders);
+  const interactables = world.interactables.concat(lifts.interactables, shops.interactables, hotel.interactables, park.interactables, campers.interactables, airport.interactables, arena.interactables, village.interactables, vault.interactables, apartments.interactables, stand.interactables, river.interactables, mtr.interactables, sky.interactables, lohas.interactables, shuttleStand.interactables, house.interactables, liftRoom.interactables, tunnels.interactables, themeParks.interactables);
   // 碰撞格仔（酒店有幾千個碰撞盒，只計玩家附近嗰啲）
   const GRID = 8, grid = new Map(), bigCols = [];
   const isBig = c => c.max[0] - c.min[0] > 200 || c.max[2] - c.min[2] > 200;
@@ -590,11 +595,12 @@ function startGame(myName) {
 
   // ---------- CCTV ----------
   let cctvMode = 0; // 0 關, 1 = 1號lift, 2 = 2號lift
-  $('btnCctv').onclick = () => {
-    sfx.click(); cctvMode = (cctvMode + 1) % 3;
+  // 0 關、1–2 = Lift 車廂、3 之後 = 柏熙屋企（門口 + 每層客廳）
+  function showCctv() {
     $('btnCctv').classList.toggle('on', cctvMode > 0); $('cctvFrame').classList.toggle('hidden', cctvMode === 0);
-    if (cctvMode) toast(`📹 CCTV：${LIFT_DEF[cctvMode - 1].name} 車廂`);
-  };
+    if (cctvMode >= 3) toast(`📹 CCTV：${house.cams[cctvMode - 3].name}`); else if (cctvMode) toast(`📹 CCTV：${LIFT_DEF[cctvMode - 1].name} 車廂`);
+  }
+  $('btnCctv').onclick = () => { sfx.click(); cctvMode = (cctvMode + 1) % (3 + house.cams.length); showCctv(); };
 
   // ---------- 語音 ----------
   $('btnVoice').onclick = async () => {
@@ -844,7 +850,7 @@ function startGame(myName) {
   function updateHUD(inCar) {
     const a = P.pos.y;
     const inHotel = hotel.inside(P.pos);
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.cable ? '🚡 金色纜車' : liftRoom.inside(P.pos) ? liftRoom.label() : tunnels.inside(P.pos) ? tunnels.label() : P.boat ? `🚢 城市河觀光船（${BOAT_SEATS[P.boat.seat].n}）` : P.shuttle ? `🚁 直通直升機 → ${P.shuttle.name}` : sky.riding() ? '🚝 空中輕軌' : mtr.riding() ? (mtr.rideInfo() ? `🚇 下一站 ${MTR_ST[mtr.rideInfo().to][0]}` : '🚇 港鐵列車') : jail.active() ? '⛓ 監倉' : mtr.inside(P.pos) ? mtr.label() : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.cable ? '🚡 金色纜車' : house.inside(P.pos) ? `🏠 柏熙屋企 ${house.floorOf(P.pos) + 1} 樓` : liftRoom.inside(P.pos) ? liftRoom.label() : tunnels.inside(P.pos) ? tunnels.label() : P.boat ? `🚢 城市河觀光船（${BOAT_SEATS[P.boat.seat].n}）` : P.shuttle ? `🚁 直通直升機 → ${P.shuttle.name}` : sky.riding() ? '🚝 空中輕軌' : mtr.riding() ? (mtr.rideInfo() ? `🚇 下一站 ${MTR_ST[mtr.rideInfo().to][0]}` : '🚇 港鐵列車') : jail.active() ? '⛓ 監倉' : mtr.inside(P.pos) ? mtr.label() : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
@@ -978,6 +984,7 @@ function startGame(myName) {
     const p = P.pos, tb = world.toiletBounds;
     if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1 || P.boat || P.shuttle || P.cable) return true;
     if (tunnels.inside(p)) return false;   // 海底隧道入面可以揸電單車
+    if (house.inside(p)) return true;
     if (liftRoom.inside(p)) return true;
     if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p) || jail.inside(p) || mtr.inside(p)) return true;
     if (p.x > 4440 && p.x < 4680 && p.z > 2520 && p.z < 2680 && p.y < 13) return true;   // 康城商場
@@ -1397,6 +1404,24 @@ function startGame(myName) {
     if (atSt) { go(); sfx.click(); } else blackout(go, 500);
   }
 
+  // ================= 柏熙屋企保險箱（金條 / 銀條）=================
+  function homeSafe() {
+    const n = v => v || 0, upd = msg => { saveEcon(); sfx.pickup(); toast(msg); homeSafe(); }, no = msg => { sfx.error(); toast(msg); homeSafe(); };
+    say('This is your safe. You can keep your gold bars and silver bars here.', '呢個係你屋企嘅保險箱，可以放金條同銀條。', { gap: 30000 });
+    choose('🔐 柏熙屋企保險箱', [
+      { head: '放入保險箱' },
+      { label: '🥇 放晒金條入去', fn: () => { const k = P.gold; if (!k) return no('你身上冇金條'); E.homeGold = n(E.homeGold) + k; P.gold = 0; upd(`🥇 放咗 ${k} 條金條入屋企保險箱`); } },
+      { label: '🥈 放晒銀條入去', fn: () => { const k = n(E.silver); if (!k) return no('你身上冇銀條'); E.homeSilver = n(E.homeSilver) + k; E.silver = 0; upd(`🥈 放咗 ${k} 條銀條入屋企保險箱`); } },
+      { label: '🥇 放 1 條金條', fn: () => { if (!P.gold) return no('你身上冇金條'); P.gold--; E.homeGold = n(E.homeGold) + 1; upd('🥇 放咗 1 條金條'); } },
+      { label: '🥈 放 1 條銀條', fn: () => { if (!n(E.silver)) return no('你身上冇銀條'); E.silver--; E.homeSilver = n(E.homeSilver) + 1; upd('🥈 放咗 1 條銀條'); } },
+      { head: '由保險箱拎出嚟' },
+      { label: '🥇 拎晒金條出嚟', fn: () => { const k = n(E.homeGold); if (!k) return no('保險箱冇金條'); P.gold += k; E.homeGold = 0; upd(`🥇 拎咗 ${k} 條金條出嚟`); } },
+      { label: '🥈 拎晒銀條出嚟', fn: () => { const k = n(E.homeSilver); if (!k) return no('保險箱冇銀條'); E.silver = n(E.silver) + k; E.homeSilver = 0; upd(`🥈 拎咗 ${k} 條銀條出嚟`); } },
+      { label: '🥇 拎 1 條金條', fn: () => { if (!n(E.homeGold)) return no('保險箱冇金條'); E.homeGold--; P.gold++; upd('🥇 拎咗 1 條金條'); } },
+      { label: '🥈 拎 1 條銀條', fn: () => { if (!n(E.homeSilver)) return no('保險箱冇銀條'); E.homeSilver--; E.silver = n(E.silver) + 1; upd('🥈 拎咗 1 條銀條'); } },
+    ], `保險箱入面：🥇 ${n(E.homeGold)} 條、🥈 ${n(E.homeSilver)} 條｜你身上：🥇 ${P.gold} 條、🥈 ${n(E.silver)} 條`, 200);
+  }
+
   // ================= 出拳打路人 / 俾路人打 =================
   function doPunch() {
     if (P.mech || P.flight || P.transit || P.seat || P.boat || P.shuttle || P.cable || bikeOn) return;
@@ -1438,6 +1463,7 @@ function startGame(myName) {
   }, 0);
   function learnNear() {
     if (P.flight || P.transit || P.boat || P.shuttle || P.cable || P.seat || P.pass || sky.riding() || mtr.riding() || school.active() || jail.active() || learn.isOpen()) return null;
+    { let hb = null, hd = 1e9; for (const h of house.spots) { const d = Math.hypot(P.pos.x - h.x, P.pos.z - h.z); if (d < h.r && d < hd && Math.abs(P.pos.y - h.y) < 1.6) { hd = d; hb = h.key; } } if (hb) return hb; }
     for (const f of FAN_SPOTS) if (Math.abs(P.pos.x - f.x) < 2.4 && Math.abs(P.pos.z - f.z) < 2.4 && Math.abs(P.pos.y - f.y) < 3) return 'fan';
     if (liftRoom.inside(P.pos)) return 'machine';
     if (lifts.insideCar(P.pos) || hotel.insideCar(P.pos)) return 'lift';
@@ -1682,7 +1708,7 @@ function startGame(myName) {
     } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
   }
 
-  if (location.search.includes('debug')) window.__g = { quiz, liftFix, learn, peds, themeParks, learnNear, doPunch, world, traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  if (location.search.includes('debug')) window.__g = { house, quiz, liftFix, learn, peds, themeParks, learnNear, doPunch, world, traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
@@ -1962,14 +1988,15 @@ function startGame(myName) {
     renderer.setViewport(0, 0, innerWidth, innerHeight);
     renderer.render(scene, camera);
     if (cctvMode) {
-      const L = lifts.lifts[cctvMode - 1];
+      const HC = cctvMode >= 3 ? house.cams[cctvMode - 3] : null, L = HC ? null : lifts.lifts[cctvMode - 1], ccam = HC ? HC.cam : L.cctvCam;
       const w = Math.round(Math.min(280, innerWidth * 0.3)), h = Math.round(w * 0.75), x = Math.round(innerWidth / 2 - w / 2), yTop = 10;
-      L.cctvCam.aspect = w / h; L.cctvCam.updateProjectionMatrix();
+      ccam.aspect = w / h; ccam.updateProjectionMatrix();
       renderer.setScissorTest(true); renderer.setScissor(x, innerHeight - yTop - h, w, h); renderer.setViewport(x, innerHeight - yTop - h, w, h);
-      renderer.render(scene, L.cctvCam);
+      renderer.render(scene, ccam);
       renderer.setScissorTest(false);
       const fr = $('cctvFrame'); Object.assign(fr.style, { left: x + 'px', top: yTop + 'px', width: w + 'px', height: h + 'px' });
-      $('cctvLbl').textContent = `CAM-${L.id + 1} ${LIFT_DEF[L.id].name}${inCar === L ? '（你部）' : ''} ${floorLabel(Math.round(L.floor))}F ${new Date().toLocaleTimeString('zh-HK', { hour12: false })}`;
+      if (HC) $('cctvLbl').textContent = `CAM-H${cctvMode - 2} ${HC.name} ${new Date().toLocaleTimeString('zh-HK', { hour12: false })}`;
+      else $('cctvLbl').textContent = `CAM-${L.id + 1} ${LIFT_DEF[L.id].name}${inCar === L ? '（你部）' : ''} ${floorLabel(Math.round(L.floor))}F ${new Date().toLocaleTimeString('zh-HK', { hour12: false })}`;
     }
 
     hudT += dt; if (hudT > 0.15) { hudT = 0; updateHUD(inCar); }

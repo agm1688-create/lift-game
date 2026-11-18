@@ -30,7 +30,7 @@ function plan(R, spots) {
     }
     // 去一間舖
     const s = pick(shops);
-    go([cur[0] < 0 ? -10 : 10, 25]); go(s.street); go(s.doorOut); go(s.doorIn);
+    if (cur[0] < 0) { go([-5.5, 10]); go([-5.5, 31]); } else go([10, 25]);   // 西面行公廁同柏熙屋企中間條路 go(s.street); go(s.doorOut); go(s.doorIn);
     if (s.type === 'fast') {
       go([s.aisle, s.doorIn[1] + 0.4]); go(s.counter); stay(3 + R() * 3, 0, 'order');
       const seat = pick(s.seats); prop = 'food';
@@ -62,7 +62,7 @@ function plan(R, spots) {
     }
     go(s.doorIn); go(s.doorOut); go(s.street);
     const next = pick(PLAZA);
-    go([next[0] < 0 ? -10 : 10, 25]); go(next); stay(2 + R() * 3, R() * 6, 'stand'); prop = null;
+    if (next[0] < 0) { go([-5.5, 31]); go([-5.5, 10]); } else go([10, 25]); go(next); stay(2 + R() * 3, R() * 6, 'stand'); prop = null;
   }
   go(p0);
   return { segs, L: time };
