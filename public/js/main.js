@@ -607,6 +607,9 @@ function startGame(myName) {
     sfx.click();
     if (fsEl()) return exitFullscreen();
     if (isStandalone()) return toast('📱 而家已經係全屏 App 模式', 2500);
+    const hasApi = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+    if (!hasApi && isIOS && store.get('fsHelpSeen', false)) return toast('📱 iPhone Safari 唔俾網頁全屏（Apple 限制）\n用主畫面「搭Lift」圖示開就全屏；或者撳 aA →「隱藏工具列」', 5000);
+    if (!hasApi && isIOS) store.set('fsHelpSeen', true);
     enterFullscreen(true);
   };
   $('btnSize').onclick = () => $('sizeBox').classList.toggle('hidden');
@@ -951,7 +954,7 @@ function startGame(myName) {
     if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1 || P.boat || P.shuttle || P.cable) return true;
     if (tunnels.inside(p)) return false;   // 海底隧道入面可以揸電單車
     if (liftRoom.inside(p)) return true;
-    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p) || jail.inside(p) || mtr.inside(p) || p.y > 7) return true;
+    if (lifts.insideCar(p) || hotel.insideCar(p) || hotel.inside(p) || vault.inside(p) || apartments.inside(p) || school.inside(p) || jail.inside(p) || mtr.inside(p)) return true;
     if (p.x > 4440 && p.x < 4680 && p.z > 2520 && p.z < 2680 && p.y < 13) return true;   // 康城商場
     if (p.x > tb.x0 && p.x < tb.x1 && p.z > tb.z0 && p.z < tb.z1 && p.y < tb.y1) return true;
     if (p.z > 36 && p.z < 48 && p.x > -46 && p.x < 56.5 && p.y < 4.5) return true;   // 商店街
@@ -1675,9 +1678,12 @@ function startGame(myName) {
     campers.update(T);
     city.update(P.pos);
     // 入室內 / 上其他車：電單車自動泊喺最後喺室外嘅位置（唔會消失）
+    // 電單車：行經室內 / 舖頭範圍只係暫時落車行路，出返室外自動再揸（唔會無端端俾你落車）；
+    // 只有離開咗落車位置好遠（例如傳送、搭 Lift 入金庫 / 地鐵）先將架車泊喺最後嗰個位
     { const nowBike = P.bike && !isIndoors() && !P.boat && !P.shuttle && !sky.riding();
-      if (P.bike && !nowBike && bikeOn) { stowBike(); toast('🅿️ 電單車泊咗喺門口，出返嚟就可以再揸', 2500); }
-      bikeOn = nowBike; if (bikeOn) lastBike = { x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.face }; }
+      if (nowBike) lastBike = { x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.face };
+      else if (P.bike && lastBike && Math.hypot(P.pos.x - lastBike.x, P.pos.z - lastBike.z) > 40) { stowBike(); toast('🅿️ 電單車泊返喺你頭先落車嘅位置', 2500); }
+      bikeOn = nowBike; }
     const speed = P.mech ? 16 : (bikeOn ? 22 : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     if (P.mech && P.mech.dash && P.mech.dash.t > 0) { mv.x += P.mech.dash.vx; mv.z += P.mech.dash.vz; P.mech.dash.t -= dt; }
