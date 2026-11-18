@@ -60,7 +60,7 @@ export function buildPeds(scene, api) {
   function punch(p, face) {
     const d = nearest(p, face); if (!d) return false;
     const away = new V3(d.pos.x - p.x, 0, d.pos.z - p.z).normalize();
-    d.st = 'down'; d.t = 1.6; d.vel.copy(away).multiplyScalar(5); d.angryT = 30; d.hitCd = 1.5;
+    d.st = 'down'; d.t = 2.4; /* 倒地 2 秒，再用 0.4 秒爬起身；追人一定行得慢過打人者 */ d.vel.copy(away).multiplyScalar(5); d.angryT = 30; d.hitCd = 1.5;
     d.av.rotation.set(0, Math.atan2(-away.x, -away.z), 0);
     const [en, zh] = SAY_HIT[Math.floor(Math.random() * SAY_HIT.length)];
     api.say(en, zh, { force: true, now: true });
@@ -78,7 +78,7 @@ export function buildPeds(scene, api) {
       const u = d.av.userData;
       if (d.st === 'down') {
         d.t -= dt; d.pos.addScaledVector(d.vel, dt); d.vel.multiplyScalar(Math.max(0, 1 - dt * 4));
-        animateAvatar(d.av, 0, dt); d.av.rotation.x = -Math.min(Math.PI / 2, (1.6 - d.t) * 6) * (d.t > 0.5 ? 1 : d.t / 0.5);
+        animateAvatar(d.av, 0, dt); d.av.rotation.x = -Math.min(Math.PI / 2, (2.4 - d.t) * 6) * (d.t > 0.4 ? 1 : d.t / 0.4);
         if (d.t <= 0) { d.st = 'angry'; d.av.rotation.x = 0; api.say('Come back here! I will get you!', '你咪走！我捉到你就知死！', { force: true }); }
       } else if (d.st === 'angry') {
         d.angryT -= dt; d.hitCd -= dt;
@@ -89,7 +89,7 @@ export function buildPeds(scene, api) {
           api.toast('😮‍💨 個路人追唔到你，放棄咗', 2500);
           continue;
         }
-        if (L > 1.1) { tmp.multiplyScalar(1 / L); d.pos.addScaledVector(tmp, Math.min(L - 1, 7.2 * dt)); d.av.rotation.y = Math.atan2(tmp.x, tmp.z); animateAvatar(d.av, 1, dt, 1.5); }
+        if (L > 1.1) { tmp.multiplyScalar(1 / L); d.pos.addScaledVector(tmp, Math.min(L - 1, (api.walkSpeed ? api.walkSpeed() * 0.75 : 5) * dt)); d.av.rotation.y = Math.atan2(tmp.x, tmp.z); animateAvatar(d.av, 1, dt, 1.5); }
         else {
           animateAvatar(d.av, 0, dt); u.armR.rotation.x = -1.6;
           if (d.hitCd <= 0 && Math.abs(p.y - d.pos.y) < 2) { d.hitCd = 1.3; api.hitPlayer(new V3(tmp.x / (L || 1), 0, tmp.z / (L || 1))); }

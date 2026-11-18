@@ -4,6 +4,7 @@ import { Batch, CHUNK, EXCL } from './city.js';
 import { IM, signMat, sign } from './interiors.js';
 import * as TX from './textures.js';
 import { ST, LINES, WALKS, geo } from './mtr_data.js';
+import { buildAvatar, animateAvatar, SKINS, SHIRTS, HAIRS, PANTS } from './avatar.js';
 
 const V3 = THREE.Vector3;
 const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, ...e });
@@ -183,6 +184,54 @@ export function buildMTR(scene, api) {
   c(-1.5, 2.2, -11, -1.45, 2.25, 11, steel, false); c(1.45, 2.2, -11, 1.5, 2.25, 11, steel, false);
   for (let z = -10; z < 10; z += 5) c(-0.4, 2.38, z, 0.4, 2.4, z + 3, IM.light, false);
   const cg = C.build(); scene.add(cg);
+
+  // ===== 人潮：大堂行嚟行去、入閘出閘、月台等車、車廂坐滿人 =====
+  const crowd = [], riders = [];
+  const R = (a, b) => a + Math.random() * (b - a);
+  const mkAv = k => { const av = buildAvatar({ gender: k % 2 ? 'f' : 'm', skin: SKINS[k % SKINS.length], hat: ['none', 'none', 'cap', 'beanie'][k % 4], shirt: SHIRTS[(k * 5) % SHIRTS.length], hair: HAIRS[(k * 3) % HAIRS.length], pants: PANTS[(k * 7) % PANTS.length] }); av.visible = false; scene.add(av); return av; };
+  const gaps = [-6.3, -4.5, -2.7, -0.9, 0.9, 2.7, 4.5, 6.3];
+  const concPt = () => [R(-12.5, 9.5), R(5, 16)];
+  for (let k = 0; k < 22; k++) {
+    const av = mkAv(k), type = k < 8 ? 'conc' : k < 12 ? 'cross' : 'wait';
+    const c = { av, type, path: [], i: 0, wait: R(0, 3), pose: Math.random() < 0.35 ? 'phone' : 'stand' };
+    if (type === 'conc') { const a = concPt(); av.position.set(X + a[0], 0, Z + a[1]); c.goal = concPt(); }
+    else if (type === 'cross') {
+      const gx = gaps[k % gaps.length], side = k % 2 ? 1 : -1, pz = R(-36, -8);
+      c.path = [concPt(), [gx, 5], [gx, -0.6], [side * 2.5, -2], [side * 3.6, pz], [side * 2.5, -2], [gx, -0.6], [gx, 5]];
+      av.position.set(X + c.path[0][0], 0, Z + c.path[0][1]);
+    } else { const side = k % 2 ? 1 : -1; av.position.set(X + side * R(3.4, 4.6), 0, Z + R(-39, -4)); av.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2; }
+    crowd.push(c);
+  }
+  // 車廂：有人坐、有人企住揸扶手
+  const benchZ = [-9, -3, 3];
+  for (let k = 0; k < 12; k++) {
+    const av = mkAv(k + 40);
+    if (k < 8) { const sx = k % 2 ? 1 : -1, z = benchZ[k % 3] + 0.6 + Math.floor(k / 3) * 1.1; av.position.set(CX + sx * 1.2, 0.45, CZ + z); av.rotation.y = sx > 0 ? -Math.PI / 2 : Math.PI / 2; riders.push({ av, sit: true }); }
+    else { const z = -10 + (k - 8) * 5 + 0.3; av.position.set(CX + (k % 2 ? 0.3 : -0.3), 0, CZ + z); av.rotation.y = k % 2 ? Math.PI : 0; riders.push({ av, sit: false }); }
+  }
+  const tmpD = new V3();
+  function crowdUpdate(dt, inS, inC) {
+    crowd.forEach(c => c.av.visible = inS); riders.forEach(r => r.av.visible = inC);
+    if (inS) for (const c of crowd) {
+      const u = c.av.userData;
+      if (c.type === 'wait') { animateAvatar(c.av, 0, dt); if (c.pose === 'phone') { u.armR.rotation.x = -2.3; u.armR.rotation.z = 0.3; } continue; }
+      if (c.wait > 0) { c.wait -= dt; animateAvatar(c.av, 0, dt); if (c.pose === 'phone') u.armR.rotation.x = -2.3; continue; }
+      const tgt = c.type === 'conc' ? c.goal : c.path[c.i];
+      tmpD.set(X + tgt[0] - c.av.position.x, 0, Z + tgt[1] - c.av.position.z); const L = tmpD.length();
+      if (L < 0.3) {
+        if (c.type === 'conc') { c.goal = concPt(); c.wait = R(1, 6); }
+        else { c.i = (c.i + 1) % c.path.length; if (c.i === 4 || c.i === 0) c.wait = R(3, 10); }
+        continue;
+      }
+      tmpD.multiplyScalar(1 / L); c.av.position.addScaledVector(tmpD, Math.min(L, 1.35 * dt)); c.av.rotation.y = Math.atan2(tmpD.x, tmpD.z);
+      animateAvatar(c.av, 1, dt, 0.5);
+    }
+    if (inC) for (const r of riders) {
+      const u = r.av.userData; animateAvatar(r.av, 0, dt);
+      if (r.sit) { u.body.position.y = -0.36; u.legL.rotation.x = u.legR.rotation.x = -Math.PI / 2; u.armL.rotation.x = u.armR.rotation.x = -0.6; }
+      else { u.armR.rotation.x = -2.9; u.body.rotation.z = Math.sin(performance.now() / 700) * 0.04; }
+    }
+  }
   // 隧道窗（貼圖郁動）
   const tunTex = TX.canvasTex(512, 128, (g2, w, h) => { g2.fillStyle = '#20262b'; g2.fillRect(0, 0, w, h); g2.fillStyle = '#3a434b'; for (let x = 0; x < w; x += 64) g2.fillRect(x, 0, 8, h); g2.fillStyle = '#ffe9a8'; g2.fillRect(200, 52, 90, 10); g2.fillStyle = '#556'; g2.fillRect(0, 96, w, 6); });
   tunTex.wrapS = THREE.RepeatWrapping; tunTex.repeat.set(4, 1);
@@ -296,6 +345,7 @@ export function buildMTR(scene, api) {
     g.visible = boards[0].visible = inS || Math.abs(p.x - X) < 300; boards.forEach(m => m.visible = g.visible);
     cg.visible = inC || ride !== null || Math.abs(p.x - CX) < 300;
     eg.visible = Math.abs(p.x) < 5200;
+    crowdUpdate(dt, inS, inC);
     if (!inS && !inC && !ride && Math.abs(p.x) < 5200) updateSigns(p);
     if (ride && !inC) { api.teleport(CX, 0.05, CZ + 2); }
   }

@@ -350,6 +350,150 @@ export function buildThemeParks(scene, api, rides) {
     }
   }
 
+  // =====================================================================
+  // 多啲機動遊戲（參考真實樂園嘅遊戲類型，原創造型同名稱）
+  // =====================================================================
+  // 旋轉臂（飛天大笨象、旋轉飛椅、彈簧旋轉車、旋轉臂）
+  function spinRide(zone, o) {
+    const hub = new THREE.Group(); hub.position.set(o.x, o.hubY || 0, o.z); add(zone, hub);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(o.colR || 0.8, (o.colR || 0.8) * 1.4, o.colH || 6, 12), std(o.colColor || '#b0bec5', { metalness: 0.5 })); col.position.set(o.x, (o.colH || 6) / 2, o.z); add(zone, col);
+    if (o.top) { const tp = o.top(); tp.position.set(o.x, o.colH || 6, o.z); add(zone, tp); }
+    cols.push({ min: [o.x - 1.5, 0, o.z - 1.5], max: [o.x + 1.5, o.colH || 6, o.z + 1.5] });
+    const arms = [], seats = [];
+    for (let k = 0; k < o.n; k++) {
+      const arm = new THREE.Group(); arm.rotation.y = k / o.n * Math.PI * 2; hub.add(arm);
+      const car = o.car(k); arm.add(car.g); car.seats.forEach(s => seats.push(s)); arms.push({ arm, car: car.g, k });
+    }
+    const r = { name: o.name, en: o.en, color: o.color, board: board(o.board[0], o.board[1]), seats, thrill: !!o.thrill, signRot: o.signRot || 0, info: o.info };
+    r.update = t => {
+      hub.rotation.y = t * o.speed;
+      arms.forEach(({ car, k }) => {
+        const lift = o.rise ? o.rise * (0.5 + 0.5 * Math.sin(t * (o.riseW || 0.6) + k * 1.3)) : 0;
+        const out = o.swing ? o.len + Math.sin(o.swing) * o.chain : o.len;
+        car.position.set(out, (o.y || 2) + lift, 0);
+        if (o.swing) car.rotation.z = -o.swing * (0.6 + 0.4 * Math.sin(t * 0.3));
+        if (o.selfSpin) car.rotation.y = t * o.selfSpin * (k % 2 ? 1 : -1);
+      });
+    };
+    addRide(zone, r);
+  }
+  // 大擺錘（極速旋風 / 沖天搖擺船）
+  function pendulumRide(zone, o) {
+    const piv = new THREE.Group(); piv.position.set(o.x, o.h, o.z); piv.rotation.y = o.yaw || 0; add(zone, piv);
+    const frame = std('#eceff1', { metalness: 0.5 });
+    [-1, 1].forEach(s => [-1, 1].forEach(e => { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, o.h * 1.08, 8), frame); leg.position.set(o.x + Math.cos(o.yaw || 0) * e * o.h * 0.22 + Math.sin(o.yaw || 0) * s * (o.w || 3), o.h / 2, o.z - Math.sin(o.yaw || 0) * e * o.h * 0.22 + Math.cos(o.yaw || 0) * s * (o.w || 3)); leg.rotation.z = e * 0.22; leg.rotation.y = o.yaw || 0; add(zone, leg); }));
+    cols.push({ min: [o.x - 2, 0, o.z - 2], max: [o.x + 2, 2, o.z + 2] });
+    const arm = new THREE.Group(); piv.add(arm);
+    mesh(new THREE.BoxGeometry(0.5, o.len, 0.5), std(o.color), 0, -o.len / 2, 0, arm);
+    const g = o.gondola(); g.g.position.y = -o.len; arm.add(g.g);
+    const r = { name: o.name, en: o.en, color: o.color, board: board(o.board[0], o.board[1]), seats: g.seats, thrill: true, signRot: o.signRot || 0, info: o.info };
+    r.update = t => { const u = t % o.period, amp = o.amp * Math.min(1, u / (o.period * 0.4)) * (u > o.period * 0.85 ? (o.period - u) / (o.period * 0.15) : 1); arm.rotation.z = amp * Math.sin(u * Math.PI * 2 / o.swingT); if (o.spin) g.g.rotation.y = t * o.spin; };
+    addRide(zone, r);
+  }
+  // 跳樓機（海洋深淵）
+  function dropTower(zone, o) {
+    const tw = new THREE.Mesh(new THREE.BoxGeometry(2.4, o.h, 2.4), std(o.color)); tw.position.set(o.x, o.h / 2, o.z); add(zone, tw);
+    cols.push({ min: [o.x - 1.3, 0, o.z - 1.3], max: [o.x + 1.3, o.h, o.z + 1.3] });
+    const ring = new THREE.Group(); add(zone, ring);
+    mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.6, 20, 1, true), std('#263238', { side: THREE.DoubleSide }), 0, 0, 0, ring);
+    const seats = []; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; seats.push(mkSeat(ring, Math.cos(a) * 3.2, -0.6, Math.sin(a) * 3.2, -a + Math.PI / 2)); mesh(new THREE.BoxGeometry(0.7, 1.3, 0.18), std('#212121'), Math.cos(a) * 3.5, -0.1, Math.sin(a) * 3.5, ring).rotation.y = -a + Math.PI / 2; }
+    const r = { name: o.name, en: o.en, color: o.color, board: board(o.board[0], o.board[1]), seats, thrill: true, signRot: o.signRot || 0, info: o.info };
+    r.update = t => { const u = t % 24; const y = u < 12 ? 1.5 + u / 12 * (o.h - 6) : u < 15 ? o.h - 4.5 : u < 16.4 ? (o.h - 4.5) - (o.h - 6) * ((u - 15) / 1.4) ** 2 : 1.5; ring.position.set(o.x, Math.max(1.5, y), o.z); };
+    addRide(zone, r);
+  }
+  // U 型穿梭過山車（U型賽車）
+  function uShuttle(zone, o) {
+    const pts = []; for (let k = 0; k <= 40; k++) { const u = k / 40 * 2 - 1; pts.push(new V3(o.x + u * o.half, o.base + o.h * u * u, o.z)); }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    add(zone, new THREE.Mesh(new THREE.TubeGeometry(curve, 120, 0.5, 8, false), std(o.color)));
+    for (let k = 0; k <= 10; k++) { const p = curve.getPointAt(k / 10); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, p.y, 6), std('#ffb300')); c.position.set(p.x, p.y / 2, p.z + 1.2); add(zone, c); }
+    const car = coasterCar(o.color)(0); add(zone, car.g);
+    const r = { name: o.name, en: o.en, color: o.color, board: board(o.board[0], o.board[1]), seats: car.seats, thrill: true, signRot: o.signRot || 0, info: o.info };
+    const tmp = new V3(), tg = new V3();
+    r.update = t => { const u = t % 30, amp = u < 22 ? Math.min(0.97, 0.3 + u / 22 * 0.67) : 0.97 * (30 - u) / 8; const s = 0.5 + 0.5 * amp * Math.sin(u * 1.3); curve.getPointAt(s, tmp); curve.getTangentAt(s, tg); car.g.position.copy(tmp); car.g.position.y += 0.6; car.g.lookAt(tmp.x + tg.x, tmp.y + 0.6 + tg.y, tmp.z + tg.z); };
+    addRide(zone, r);
+  }
+  // 模擬器（飛行模擬器）：大堂入面一個會郁嘅座艙
+  function simulator(zone, o) {
+    const hall = new Batch();
+    hall.box(o.x - 14, 0, o.z - 10, o.x + 14, 0.2, o.z + 10, std('#37474f'));
+    hall.box(o.x - 14, 0, o.z - 10, o.x + 14, 9, o.z - 9.6, std(o.color)); hall.box(o.x - 14, 0, o.z - 10, o.x - 13.6, 9, o.z + 10, std(o.color)); hall.box(o.x + 13.6, 0, o.z - 10, o.x + 14, 9, o.z + 10, std(o.color));
+    hall.box(o.x - 14, 9, o.z - 10, o.x + 14, 9.4, o.z + 10, std('#263238'));
+    const scr = new THREE.PlaneGeometry(22, 7); scr.translate(o.x, 5, o.z - 9.5); hall.add(scr, new THREE.MeshBasicMaterial({ color: '#4fc3f7' }));
+    add(zone, hall.build()); cols.push(...hall.cols);
+    const pod = new THREE.Group(); pod.position.set(o.x, 1.4, o.z + 1); add(zone, pod);
+    mesh(new THREE.BoxGeometry(9, 0.5, 5), std('#90a4ae', { metalness: 0.5 }), 0, 0, 0, pod);
+    const seats = []; for (let row = 0; row < 2; row++) for (let k = 0; k < 6; k++) { const x = -3.75 + k * 1.5, z = -1 + row * 1.6; mesh(new THREE.BoxGeometry(1, 0.5, 0.8), std('#c62828'), x, 0.5, z, pod); seats.push(mkSeat(pod, x, 0.3, z, Math.PI)); }
+    const r = { name: o.name, en: o.en, color: o.color, board: board(o.board[0], o.board[1]), seats, thrill: true, signRot: o.signRot || 0, info: o.info };
+    r.update = t => { pod.rotation.set(Math.sin(t * 1.7) * 0.12, Math.sin(t * 0.6) * 0.15, Math.sin(t * 2.3 + 1) * 0.14); pod.position.y = 1.4 + Math.sin(t * 3.1) * 0.25; };
+    addRide(zone, r);
+  }
+  // 室內黑暗遊戲（鐳射射擊車、神秘大宅）：一間大屋，車喺入面行
+  function darkRide(zone, o) {
+    const B = new Batch(), w = o.w, d = o.d, c = std(o.color), roof = std(o.roof || '#4e342e');
+    B.box(o.x - w, 0, o.z - d, o.x + w, o.h, o.z - d + 0.4, c); B.box(o.x - w, 0, o.z + d - 0.4, o.x - 3, o.h, o.z + d, c); B.box(o.x + 3, 0, o.z + d - 0.4, o.x + w, o.h, o.z + d, c);
+    B.box(o.x - w, 0, o.z - d, o.x - w + 0.4, o.h, o.z + d, c); B.box(o.x + w - 0.4, 0, o.z - d, o.x + w, o.h, o.z + d, c);
+    B.box(o.x - w - 0.5, o.h, o.z - d - 0.5, o.x + w + 0.5, o.h + 0.6, o.z + d + 0.5, roof);
+    if (o.towers) [[-w, -d], [w, -d], [-w, d], [w, d]].forEach(([dx, dz]) => { const t = new THREE.CylinderGeometry(2, 2, o.h + 6, 10); t.translate(o.x + dx, (o.h + 6) / 2, o.z + dz); B.add(t, c); const cn = new THREE.ConeGeometry(2.6, 5, 10); cn.translate(o.x + dx, o.h + 8.5, o.z + dz); B.add(cn, roof); });
+    for (let k = 0; k < o.props; k++) { const a = k / o.props * Math.PI * 2; const p = new THREE.IcosahedronGeometry(1.2 + (k % 3) * 0.5, 0); p.translate(o.x + Math.cos(a) * w * 0.35, 1.5 + (k % 4), o.z + Math.sin(a) * d * 0.35); B.add(p, std(PASTEL[k % PASTEL.length], { emissive: PASTEL[k % PASTEL.length], emissiveIntensity: 0.35 })); }
+    sign(B, o.x, o.h - 1.2, o.z + d + 0.05, w * 1.4, 1.6, signMat(`${o.name} ${o.en}`, o.color, '#fff', 'bold 40px sans-serif'), '+z');
+    add(zone, B.build());
+    const pts = []; for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; pts.push([o.x + Math.cos(a) * (w - 4) * (k % 2 ? 0.75 : 1), 0.4, o.z + Math.sin(a) * (d - 4)]); }
+    trackRide(zone, { name: o.name, en: o.en, color: o.color, pts, speed: 3, cars: 4, gap: 'even', car: o.car || coasterCar(o.color), board: [o.x, o.z + d + 4], thrill: false, railR: 0.15, supports: false, yawOnly: true, info: o.info });
+  }
+  const elephant = k => { const g = new THREE.Group(), c = std(['#90caf9', '#f8bbd0', '#fff59d', '#c5e1a5'][k % 4]); mesh(new THREE.SphereGeometry(1.2, 12, 10), c, 0, 0, 0, g).scale.set(1, 0.9, 1.4); mesh(new THREE.SphereGeometry(0.8, 10, 8), c, 0, 0.6, 1.4, g); const tr = mesh(new THREE.CylinderGeometry(0.15, 0.25, 1.2, 8), c, 0, 0.1, 2.1, g); tr.rotation.x = 0.8; [-1, 1].forEach(s => { const e = mesh(new THREE.CircleGeometry(0.8, 12), new THREE.MeshStandardMaterial({ color: c.color, side: THREE.DoubleSide }), s * 0.8, 0.8, 1.2, g); e.rotation.y = s * 1.2; }); return { g, seats: [mkSeat(g, 0, 0.7, -0.2), mkSeat(g, 0, 0.7, -0.9)] }; };
+  const chair = k => { const g = new THREE.Group(); mesh(new THREE.CylinderGeometry(0.03, 0.03, 6, 4), std('#90a4ae'), 0, 3, 0, g); mesh(new THREE.BoxGeometry(0.7, 0.1, 0.6), std(PASTEL[k % 8]), 0, 0, 0, g); return { g, seats: [mkSeat(g, 0, 0.05, 0, Math.PI / 2)] }; };
+  const spring = k => { const g = new THREE.Group(); mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.8, 14), std(PASTEL[k % 8]), 0, 0, 0, g); mesh(new THREE.TorusGeometry(1.1, 0.15, 8, 18), std('#ff7043'), 0, 0.4, 0, g).rotation.x = Math.PI / 2; return { g, seats: [mkSeat(g, -0.4, 0.2, 0, Math.PI / 2), mkSeat(g, 0.4, 0.2, 0, Math.PI / 2)] }; };
+  const arm4 = k => { const g = new THREE.Group(); mesh(new THREE.BoxGeometry(2.6, 0.4, 1.6), std(PASTEL[k % 8]), 0, 0, 0, g); mesh(new THREE.BoxGeometry(2.6, 1.0, 0.15), std('#37474f'), 0, 0.5, -0.8, g); return { g, seats: [mkSeat(g, -0.7, 0.2, 0, Math.PI / 2), mkSeat(g, 0.7, 0.2, 0, Math.PI / 2)] }; };
+  const train = k => {
+    const g = new THREE.Group();
+    if (k === 0) { mesh(new THREE.CylinderGeometry(0.9, 0.9, 3.6, 14), std('#c62828'), 0, 1.3, 0.3, g).rotation.x = Math.PI / 2; mesh(new THREE.BoxGeometry(2, 2.2, 1.6), std('#1b5e20'), 0, 1.6, -1.6, g); mesh(new THREE.CylinderGeometry(0.3, 0.45, 1.2, 10), std('#212121'), 0, 2.6, 1.6, g); return { g, seats: [mkSeat(g, 0, 0.9, -1.6)] }; }
+    mesh(new THREE.BoxGeometry(2.2, 0.6, 4.2), std('#795548'), 0, 0.6, 0, g); mesh(new THREE.BoxGeometry(2.3, 0.15, 4.4), std(PASTEL[k % 8]), 0, 2.6, 0, g);
+    [[-1, -1.9], [1, -1.9], [-1, 1.9], [1, 1.9]].forEach(([x, z]) => mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.8, 6), std('#ffd54f'), x, 1.7, z, g));
+    return { g, seats: [mkSeat(g, -0.5, 0.95, 1.2), mkSeat(g, 0.5, 0.95, 1.2), mkSeat(g, -0.5, 0.95, -0.4), mkSeat(g, 0.5, 0.95, -0.4)] };
+  };
+  const sleigh = k => { const g = new THREE.Group(), c = std(k % 2 ? '#1565c0' : '#e3f2fd'); mesh(new THREE.BoxGeometry(1.8, 0.7, 2.6), c, 0, 0.6, 0, g); mesh(new THREE.TorusGeometry(0.6, 0.1, 6, 12, Math.PI), std('#b0bec5'), 0, 0.9, 1.3, g); return { g, seats: [mkSeat(g, -0.4, 0.8, 0.5), mkSeat(g, 0.4, 0.8, 0.5), mkSeat(g, -0.4, 0.8, -0.6), mkSeat(g, 0.4, 0.8, -0.6)] }; };
+  const boat = k => { const g = new THREE.Group(); mesh(new THREE.BoxGeometry(2.2, 0.7, 5), std(PASTEL[k % 8]), 0, 0.2, 0, g); const seats = []; for (let z = -1.6; z <= 1.6; z += 1.1) [-0.5, 0.5].forEach(x => seats.push(mkSeat(g, x, 0.5, z))); return { g, seats }; };
+
+  // ---------- 迪士尼樂園：加多 11 個 ----------
+  {
+    const Z = 'disney', D = DISNEY;
+    // 樂園火車（圍住成個樂園行一圈）
+    const rr = 16, a0 = D.x0 + 10, a1 = D.x1 - 10, b0 = D.z0 + 6, b1 = D.z1 - 8, pts = [];
+    [[a0 + rr, b0 + rr, Math.PI], [a1 - rr, b0 + rr, -Math.PI / 2], [a1 - rr, b1 - rr, 0], [a0 + rr, b1 - rr, Math.PI / 2]].forEach(([cx2, cz2, st]) => { for (let k = 0; k <= 4; k++) { const a = st + k / 4 * Math.PI / 2; pts.push([cx2 + Math.cos(a) * rr, 0.25, cz2 + Math.sin(a) * rr]); } });
+    trackRide(Z, { name: '樂園火車', en: 'Park Railroad', color: '#1b5e20', pts, speed: 6, cars: 5, gap: 5, car: train, board: [a0 + 30, b0 + 6], thrill: false, railR: 0.12, railColor: '#5d4037', supports: false, yawOnly: true, info: '蒸汽火車圍住成個樂園行一圈' });
+    spinRide(Z, { name: '飛天大笨象', en: 'Flying Elephants', color: '#5c6bc0', x: -1830, z: 1765, n: 8, len: 6, y: 2.5, rise: 4, colH: 7, car: elephant, speed: 0.6, board: [-1830, 1780], info: '坐住大笨象轉圈，可以飛高飛低', top: () => { const m = new THREE.Mesh(new THREE.SphereGeometry(1.6, 14, 10), std('#ffca28', { metalness: 0.6 })); return m; } });
+    spinRide(Z, { name: '彈簧旋轉車', en: 'Spring Spinner', color: '#ff7043', x: -1530, z: 1765, n: 6, len: 5, y: 1.2, rise: 0.8, riseW: 2.5, colH: 3, car: spring, speed: 0.8, selfSpin: 1.2, board: [-1530, 1778], info: '一路轉一路彈上彈落' });
+    uShuttle(Z, { name: 'U型賽車過山車', en: 'U-Shaped Racer Coaster', color: '#ef6c00', x: -1400, z: 1760, half: 32, base: 1, h: 26, board: [-1400, 1772], info: '喺 U 型路軌前後衝上 26 米高' });
+    simulator(Z, { name: '飛行模擬器', en: 'Flight Simulator', color: '#455a64', x: -1360, z: 1960, board: [-1360, 1974], info: '坐喺座艙睇大畫面，座位會跟住震' });
+    darkRide(Z, { name: '鐳射射擊車', en: 'Laser Shooting Ride', color: '#3949ab', roof: '#1a237e', x: -1500, z: 1955, w: 18, d: 13, h: 9, props: 10, info: '坐車入屋，用鐳射槍射目標' });
+    darkRide(Z, { name: '神秘大宅', en: 'Mystery Mansion', color: '#6d4c41', roof: '#3e2723', x: -1860, z: 2095, w: 16, d: 20, h: 10, props: 12, towers: true, info: '坐車遊神秘大宅，入面啲嘢會郁' });
+    darkRide(Z, { name: '環遊世界水路之旅', en: 'Around the World Boat Ride', color: '#ec407a', roof: '#ad1457', x: -1700, z: 1765, w: 20, d: 14, h: 9, props: 14, car: boat, info: '坐船睇世界各地嘅公仔同風景' });
+    // 冰雪世界：雪山 + 雪橇過山車 + 冰雪船河
+    const sm = new THREE.Mesh(new THREE.ConeGeometry(18, 24, 10), std('#e3f2fd')); sm.position.set(-1835, 12, 2235); add(Z, sm);
+    cols.push({ min: [-1847, 0, 2223], max: [-1823, 18, 2247] });
+    const sp = []; for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2; sp.push([-1835 + Math.cos(a) * 28, 1.5 + 6 * Math.max(0, Math.sin(a * 2)), 2235 + Math.sin(a) * 22]); }
+    trackRide(Z, { name: '冰雪雪橇過山車', en: 'Snow Sleigh Coaster', color: '#1565c0', pts: sp, speed: 'coaster', cars: 4, gap: 3, car: sleigh, board: [-1835, 2205], thrill: true, railColor: '#bbdefb', info: '適合一家大細嘅雪橇過山車' });
+    const bp = []; for (let k = 0; k < 14; k++) { const a = k / 14 * Math.PI * 2; bp.push([-1770 + Math.cos(a) * 18, 0.35, 2265 + Math.sin(a) * 9]); }
+    const bw = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bp.map(p => new V3(p[0], 0, p[2])), true), 60, 3, 4, true), MAT.water); bw.scale.y = 0.02; bw.position.y = 0.05; add(Z, bw);
+    trackRide(Z, { name: '冰雪世界船河', en: 'Snow World Boat Ride', color: '#0277bd', pts: bp, speed: 2.5, cars: 3, gap: 'even', car: boat, board: [-1770, 2250], thrill: false, rail: false, yawOnly: true, info: '坐船穿過冰雪世界' });
+    spinRide(Z, { name: '迷你小火箭', en: 'Mini Rockets', color: '#7e57c2', x: -1530, z: 1860, n: 6, len: 4, y: 1.5, rise: 2, colH: 4, car: k => { const g = new THREE.Group(); mesh(new THREE.ConeGeometry(0.8, 2.4, 10), std(PASTEL[k]), 0, 0.4, 0, g).rotation.x = Math.PI / 2; return { g, seats: [mkSeat(g, 0, 0.1, -0.2)] }; }, speed: 0.9, board: [-1530, 1872], info: '細細架嘅小火箭，適合小朋友' });
+  }
+
+  // ---------- 海洋公園：加多 7 個 ----------
+  {
+    const Z = 'ocean';
+    pendulumRide(Z, { name: '極速旋風', en: 'Giant Pendulum', color: '#e53935', x: 2190, z: 3870, h: 20, len: 17, amp: 2.2, period: 40, swingT: 5, w: 3, spin: 1.2, gondola: () => { const g = new THREE.Group(); mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.6, 24), std('#ffca28'), 0, 0, 0, g); const seats = []; for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; seats.push(mkSeat(g, Math.cos(a) * 3.6, 0.3, Math.sin(a) * 3.6, -a - Math.PI / 2)); } return { g, seats }; }, board: [2190, 3885], info: '大擺錘一路轉一路盪到幾乎打橫！' });
+    pendulumRide(Z, { name: '沖天搖擺船', en: 'Swinging Pirate Ship', color: '#6d4c41', x: 1975, z: 3880, yaw: Math.PI / 2, h: 14, len: 11, amp: 1.2, period: 36, swingT: 4.5, w: 2, gondola: () => { const g = new THREE.Group(); mesh(new THREE.BoxGeometry(3.2, 1.6, 14), std('#8d6e63'), 0, 0, 0, g); mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 6), std('#5d4037'), 0, 3, 0, g); const s = mesh(new THREE.PlaneGeometry(4, 3), new THREE.MeshStandardMaterial({ color: '#fafafa', side: THREE.DoubleSide }), 0, 4, 0, g); s.rotation.y = Math.PI / 2; const seats = []; for (let z = -5.5; z <= 5.5; z += 1.6) [-0.8, 0.8].forEach(x => seats.push(mkSeat(g, x, 0.6, z, Math.PI / 2))); return { g, seats }; }, board: [1995, 3880], signRot: Math.PI / 2, info: '海盜船前後盪到好高' });
+    dropTower(Z, { name: '海洋深淵跳塔', en: 'Abyss Drop Tower', color: '#0d47a1', x: 2470, z: 3780, h: 60, board: [2470, 3794], info: '升上 55 米，然後極速跌落嚟！' });
+    spinRide(Z, { name: '旋轉飛椅', en: 'Swing Ride', color: '#00897b', x: 2470, z: 4010, n: 16, len: 6, chain: 6, swing: 0.8, y: 7, colH: 12, hubY: 4, car: chair, speed: 1.1, thrill: true, board: [2470, 4024], info: '飛椅轉得越快就飛得越出', top: () => new THREE.Mesh(new THREE.ConeGeometry(7, 3, 16), std('#26a69a')) });
+    spinRide(Z, { name: '狂野旋轉臂', en: 'Wild Spinning Arms', color: '#8e24aa', x: 2300, z: 3975, n: 4, len: 7, y: 3, rise: 6, riseW: 1.4, colH: 6, car: arm4, speed: 1.6, selfSpin: 2, thrill: true, board: [2300, 3990], info: '四隻手臂一路轉一路自轉，好刺激' });
+    const ap = []; for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; ap.push([2160 + Math.cos(a) * 24, 1.5 + 5 * Math.max(0, Math.sin(a * 3)), 4060 + Math.sin(a) * 16]); }
+    trackRide(Z, { name: '極地雪橇過山車', en: 'Polar Sleigh Coaster', color: '#0288d1', pts: ap, speed: 'coaster', cars: 3, gap: 3, car: sleigh, board: [2160, 4040], thrill: true, railColor: '#e1f5fe', info: '喺冰雪世界穿梭嘅家庭過山車' });
+    const ep = [[1925, 1.2, 3760], [1925, 1.2, 4150], [1932, 1.2, 4160], [1932, 1.2, 3750]];
+    trackRide(Z, { name: '海洋列車', en: 'Ocean Express', color: '#00acc1', pts: ep, speed: 9, cars: 4, gap: 5, car: k => { const g = new THREE.Group(); mesh(new THREE.BoxGeometry(2.6, 2.6, 4.6), std(k % 2 ? '#00acc1' : '#e0f7fa'), 0, 1.5, 0, g); mesh(new THREE.BoxGeometry(2.62, 0.8, 4), new THREE.MeshStandardMaterial({ color: '#80deea', transparent: true, opacity: 0.6 }), 0, 2.1, 0, g); return { g, seats: [mkSeat(g, -0.6, 0.6, 1), mkSeat(g, 0.6, 0.6, 1), mkSeat(g, -0.6, 0.6, -1), mkSeat(g, 0.6, 0.6, -1)] }; }, board: [1945, 3770], thrill: false, railR: 0.15, supports: false, yawOnly: true, info: '由海濱樂園去高峰樂園嘅列車' });
+  }
+
   function update(dt, t, p) {
     const nearD = p.x > DISNEY.x0 - 1200 && p.x < DISNEY.x1 + 1200 && p.z > DISNEY.z0 - 1200 && p.z < DISNEY.z1 + 1200;
     const nearO = p.x > OCEAN.x0 - 1200 && p.x < OCEAN.x1 + 1200 && p.z > OCEAN.z0 - 1200 && p.z < OCEAN.z1 + 1200;

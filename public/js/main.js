@@ -1375,6 +1375,7 @@ function startGame(myName) {
     P.punchT = 0.3; sfx.whoosh();
     if (peds.punch(P.pos, P.face)) { sfx.boom(); shake = Math.max(shake, 0.25); }
   }
+  api.walkSpeed = () => 7.5 * (0.7 + 0.3 * P.scale);
   api.hitPlayer = dir => {
     if (api.busy() || bikeOn) return;
     P.pos.addScaledVector(dir, 2.2); P.vy = 4; P.grounded = false; shake = Math.max(shake, 0.6); sfx.error();
