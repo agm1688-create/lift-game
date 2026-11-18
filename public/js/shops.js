@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import * as T from './textures.js';
 import { goldMat, buildAvatar } from './avatar.js';
+import { exhaustFanMesh } from './interiors.js';
 
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 const Z0 = 36, DEPTH = 12, Z1 = Z0 + DEPTH, H = 4.2;
@@ -100,6 +101,7 @@ export function buildShops(scene, api, SHOPS = {}) {
     box(x1, 0, Z0, x1 + 0.2, H, Z1, outM);
     box(x0 - 0.3, H, Z0 - 0.3, x1 + 0.3, H + 0.3, Z1 + 0.3, std('#444'));
     // 內牆面
+    scene.add(exhaustFanMesh(x1 - 1.6, 3.2, Z1 - 0.03, '-z'));
     const inner = new THREE.Mesh(new THREE.PlaneGeometry(S.w, H), wallM); inner.position.set(cx, H / 2, Z1 - 0.01); inner.rotation.y = Math.PI; scene.add(inner);
     // 玻璃門面 + 門口
     const dw = 1.4;

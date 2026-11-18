@@ -1,7 +1,7 @@
 // 監倉：揸電單車沖紅燈又唔夠錢交罰款，就要坐監 3 分鐘（重新整理都走唔甩）
 import * as THREE from 'three';
 import { Batch } from './city.js';
-import { IM, signMat, sign } from './interiors.js';
+import { IM, signMat, sign, exhaustFan } from './interiors.js';
 import { buildAvatar } from './avatar.js';
 
 export const JAIL = { x: 6600, z: 600 };
@@ -30,6 +30,7 @@ export function buildJail(scene, api) {
   sign(B, X, 2.6, Z + D + 0.15, 4, 0.5, signMat('⛓ 警署羈留室 HOLDING CELL', '#b71c1c', '#fff'), '+z');
   sign(B, X - W + 0.05, 1.8, Z, 3.2, 0.9, signMat('🚦 紅燈要停！Red light means STOP!', '#263238', '#ffeb3b', 'bold 34px sans-serif'), '+x');
   for (let x = -W + 1.5; x < W; x += 3) b(x - 0.6, H - 0.03, -0.2, x + 0.6, H, 0.2, IM.light, false);
+  exhaustFan(B, X + 3.4, 2.5, Z - D + 0.02, '+z');
   const g = B.build(); scene.add(g);
   const guard = buildAvatar({ gender: 'm', skin: '#e0ac69', hat: 'cap', shirt: '#1a237e', pants: '#1a237e', hair: '#1b1b1b' });
   guard.position.set(X + 1.5, 0, Z + D + 3); guard.rotation.y = Math.PI; scene.add(guard);

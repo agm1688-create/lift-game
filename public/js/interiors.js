@@ -76,6 +76,36 @@ export function shell(B, x0, z0, x1, z1, gf, wallMat, glassFront = true) {
   return { ix0: x0 + t + 0.05, iz0: z0 + t + 0.05, ix1: x1 - t - 0.05, iz1: z1 - t - 0.05, xm, gf };
 }
 
+// ---------- 前方後圓抽氣扇（每幢樓入面都有，行近可以睇零件學英文）----------
+export const FAN_SPOTS = [];
+const FANM = { body: std('#dfe3e6', { metalness: 0.3 }), frame: std('#f7f7f5'), blade: std('#8fa3b0', { metalness: 0.4 }), dark: std('#37474f') };
+function fanGeos(face) {
+  const ry = { '+z': 0, '-z': Math.PI, '+x': Math.PI / 2, '-x': -Math.PI / 2 }[face], out = [];
+  const g = (geo, m, x, y, z, rz = 0, rx = 0) => { if (rx) geo.rotateX(rx); if (rz) geo.rotateZ(rz); geo.translate(x, y, z); geo.rotateY(ry); out.push([geo, m]); };
+  g(new THREE.CylinderGeometry(0.27, 0.27, 0.24, 20), FANM.body, 0, 0, 0.12, 0, Math.PI / 2);          // 後面圓形摩打殼
+  [[0, 0.3, 0.66, 0.06], [0, -0.3, 0.66, 0.06], [0.3, 0, 0.06, 0.66], [-0.3, 0, 0.06, 0.66]].forEach(([x, y, w, h]) => g(new THREE.BoxGeometry(w, h, 0.05), FANM.frame, x, y, 0.27));   // 前面方框
+  for (let k = -2; k <= 2; k++) g(new THREE.BoxGeometry(0.58, 0.015, 0.012), FANM.frame, 0, k * 0.11, 0.29);   // 防護網
+  for (let k = 0; k < 3; k++) g(new THREE.BoxGeometry(0.09, 0.46, 0.012), FANM.blade, 0, 0, 0.24, k * Math.PI * 2 / 3);   // 扇葉
+  g(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), FANM.dark, 0, 0, 0.25, 0, Math.PI / 2);          // 中軸
+  g(new THREE.BoxGeometry(0.012, 0.5, 0.012), FANM.dark, 0.28, -0.55, 0.27);                             // 拉掣繩
+  return out;
+}
+const FACE_N = { '+z': [0, 1], '-z': [0, -1], '+x': [1, 0], '-x': [-1, 0] };
+export function fanModel() { const g = new THREE.Group(); for (const [geo, m] of fanGeos('+z')) g.add(new THREE.Mesh(geo, m)); return g; }
+// 用 Batch 砌（合併）
+export function exhaustFan(B, x, y, z, face = '+z', floorY = 0) {
+  for (const [geo, m] of fanGeos(face)) { geo.translate(x, y, z); B.add(geo, m); }
+  const n = FACE_N[face]; FAN_SPOTS.push({ x: x + n[0] * 1.4, y: floorY, z: z + n[1] * 1.4 });
+}
+// 單獨一個 Mesh（俾唔用 Batch 嘅地方）
+export function exhaustFanMesh(x, y, z, face = '+z', floorY = 0) {
+  const grp = new THREE.Group();
+  for (const [geo, m] of fanGeos(face)) grp.add(new THREE.Mesh(geo, m));
+  grp.position.set(x, y, z);
+  const n = FACE_N[face]; FAN_SPOTS.push({ x: x + n[0] * 1.4, y: floorY, z: z + n[1] * 1.4 });
+  return grp;
+}
+
 // ---------- 各種舖 / 大堂 ----------
 const KIND_SIGN = {
   office: ['辦公大樓 OFFICE', '#263238'], shop: ['便利店 24小時', '#e65100'], cafe: ['咖啡室 CAFÉ', '#5d4037'], gym: ['健身中心 GYM', '#212121'],
@@ -94,6 +124,7 @@ export function storeInterior(B, I, kind, R, signText) {
   sign(B, xm, 3.9, iz1 + 0.42, Math.min(W - 1, 8), 1.2, signMat(txt, col));                  // 門口招牌
   sign(B, xm, 2.6, iz0 + 0.02, Math.min(W - 2, 6), 0.9, signMat(txt, col), '+z');           // 入面背牆
   plant(B, ix0 + 0.6, iz1 - 0.8); plant(B, ix1 - 0.6, iz1 - 0.8);
+  exhaustFan(B, ix1 - 1.6, Math.min(gf - 0.9, 3.1), iz0 + 0.02, '+z');
   if (W > 28) for (let x = ix0 + 12; x < ix1 - 6; x += 12) for (let z = iz0 + 12; z < iz1 - 8; z += 12) if (Math.abs(x - xm) > 3) cyl(B, x, 0, z, 0.45, 0.45, gf, IM.white, 12, true);
   const front = iz1 - 3.5;
   if (kind === 'office' || kind === 'apt') {
@@ -173,6 +204,7 @@ export function houseInterior(B, h, wallMat) {
   B.box(x1 - 0.95, 0, mz + 0.2 - 0.01, x1 - 0.3, 1.9, mz + 0.85 - 0.6, std('#e0e0e0'));
   table(B, xm + 0.6, z1 - 2.3, 1.0, 1.0); chair(B, xm + 0.6, z1 - 1.55, -1); chair(B, xm + 0.6, z1 - 3.05, 1);
   B.box(x0 + 0.6, y1 - 0.06, z1 - 3, x0 + 1.4, y1 - 0.01, z1 - 2.2, IM.light, false);
+  exhaustFan(B, x1 - t - 0.02, 2.2, z1 - 1.5, '-x');
 }
 
 // ---------- 穀倉 ----------
@@ -187,6 +219,7 @@ export function barnInterior(B, bx, bz, red) {
   // 牛
   [[-3, 1.5], [-1, 3]].forEach(([x, z]) => { B.box(bx + x - 0.4, 0.7, bz + z - 0.9, bx + x + 0.4, 1.4, bz + z + 0.9, IM.cow); B.box(bx + x - 0.2, 1.1, bz + z + 0.9, bx + x + 0.2, 1.5, bz + z + 1.3, IM.cow, false); B.box(bx + x - 0.41, 0.9, bz + z - 0.3, bx + x + 0.41, 1.2, bz + z + 0.2, IM.cowSpot, false); [[-0.3, -0.7], [0.3, -0.7], [-0.3, 0.7], [0.3, 0.7]].forEach(([a, b]) => B.box(bx + x + a - 0.07, 0, bz + z + b - 0.07, bx + x + a + 0.07, 0.7, bz + z + b + 0.07, IM.cow, false)); });
   for (let z = -2; z <= 4; z += 3) B.box(bx - 5, 0, bz + z, bx + 0.5, 1.1, bz + z + 0.1, IM.wood);
+  exhaustFan(B, bx + 5, 4.2, bz - 5.68, '+z');
 }
 
 // ---------- 學校 ----------
@@ -195,6 +228,7 @@ export function school(B, cx, cz, name) {
   const x0 = cx - 72, x1 = cx + 72, z0 = cz - 88, z1 = cz - 60, gf = 4, H = 13;
   const wall = std('#f3e9d2'), trim = std('#c0392b');
   B.box(x0, gf, z0, x1, H, z1, wall, true, 4, 3.5);
+  exhaustFan(B, x0 + 4, 3.1, z0 + 0.4, '+z');
   for (let y = gf; y < H; y += 3) B.box(x0 - 0.1, y, z1, x1 + 0.1, y + 0.3, z1 + 0.1, trim, false);
   for (let x = x0 + 2; x < x1 - 1; x += 4) for (let y = gf + 0.8; y < H - 1; y += 3) B.box(x, y, z1 + 0.01, x + 2.4, y + 1.4, z1 + 0.04, IM.glass, false);
   B.box(x0 - 0.5, H, z0 - 0.5, x1 + 0.5, H + 0.5, z1 + 0.5, std('#9e9e9e'), false);

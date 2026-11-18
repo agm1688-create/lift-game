@@ -37,6 +37,10 @@ import { buildTunnels } from './tunnel.js';
 import { buildLearn, MACHINES } from './learn.js';
 import { buildPeds } from './peds.js';
 import { buildThemeParks } from './themeparks.js';
+import { buildLiftFix } from './liftfix.js';
+import { buildQuiz } from './quiz.js';
+import { FAN_SPOTS, exhaustFanMesh } from './interiors.js';
+import { HOTEL } from './hotel.js';
 import { junctionsNear } from './traffic.js';
 import { englishVoices, voiceScore, setVoice, currentVoice, setRate, currentRate, initEnglish, unlockSpeech, say, setEnglish, englishOn, VEH, ITEM, PET_EN, numWords, article } from './english.js';
 
@@ -168,7 +172,7 @@ function startGame(myName) {
     toggleDog: () => openPetShop(),
     vet: () => { if (!P.pet) return toast('你未有寵物喎，去隔籬寵物店領養啦'); sfx.bark(); toast(`🩺 獸醫：你隻${PETS[petIndex(P.pet)].n}好健康！❤️`); },
     liftSpeed: i => { const L = lifts.lifts[i]; return L ? Math.sign(L.vy) : 0; },
-    keyPrompt, liftCmd: (id, cmd, floor) => net.send({ t: 'lift', id, cmd, floor }),
+    keyPrompt, liftCmd: (id, cmd, floor) => liftFix.gate('lift' + id, id < 2 ? LIFT_DEF[id].name : `柏熙酒店 ${id - 1}號 Lift`, () => net.send({ t: 'lift', id, cmd, floor })),
     now: () => net.now(), playerY: () => P.pos.y,
     arrived: id => { const L = lifts.lifts[id]; if (Math.abs(P.pos.y - L.y) < 40) { sfx.ding(); if (lifts.insideCar(P.pos) === L) say(`Ding! This is floor ${numWords(Math.max(1, Math.round(L.floor)))}. The doors are opening.`, `叮！${floorLabel(Math.round(L.floor))} 樓到喇，開門喇。`, { force: true }); } },
   };
@@ -214,7 +218,10 @@ function startGame(myName) {
   api.reward = n => { E.cash = Math.round((E.cash + n) * 10) / 10; saveEcon(); };
   api.busy = () => !!(P.seat || P.flight || P.mech || P.transit || P.pass || P.boat || P.shuttle || P.cable || sky.riding() || mtr.riding());
   api.loadCity = () => city.loadAll(P.pos);
-  api.blocked = () => jail.active() || nightLock.locked();
+  api.blocked = () => jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
+  const liftFix = buildLiftFix({ store, sfx, say });
+  const quiz = buildQuiz({ store, sfx, say, onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
+  setTimeout(() => quiz.resume(), 0);
   api.boatTicket = () => boatTicket();
   api.shuttle = (k, to) => shuttle(k, to);
   api.spraying = () => P.spraying; api.pos = () => P.pos;
@@ -229,6 +236,9 @@ function startGame(myName) {
   const tunnels = buildTunnels(scene, api);
   const themeParks = buildThemeParks(scene, api, park.rides);
   const learn = buildLearn({ say, sfx });
+  scene.add(exhaustFanMesh(HOTEL.x - 8, 3.0, HOTEL.z - 1.84, '+z'));   // 酒店大堂抽氣扇
+  { const aptMenu0 = apartments.liftMenu; apartments.liftMenu = (info, fromLobby) => liftFix.gate('apt:' + info.name, `${info.name} Lift`, () => aptMenu0(info, fromLobby)); }
+  const quizHint = document.createElement('div'); quizHint.style.cssText = 'position:absolute;left:calc(10px + env(safe-area-inset-left));bottom:calc(172px + env(safe-area-inset-bottom));background:rgba(0,0,0,.45);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;pointer-events:none'; $('hud').appendChild(quizHint);
   const acDisplay = buildACDisplay();
   api.machineRoom = (name, backFn) => { leaveAll(); liftRoom.enter(name, backFn); };
   setTimeout(() => jail.resume(), 0);
@@ -1428,6 +1438,7 @@ function startGame(myName) {
   }, 0);
   function learnNear() {
     if (P.flight || P.transit || P.boat || P.shuttle || P.cable || P.seat || P.pass || sky.riding() || mtr.riding() || school.active() || jail.active() || learn.isOpen()) return null;
+    for (const f of FAN_SPOTS) if (Math.abs(P.pos.x - f.x) < 2.4 && Math.abs(P.pos.z - f.z) < 2.4 && Math.abs(P.pos.y - f.y) < 3) return 'fan';
     if (liftRoom.inside(P.pos)) return 'machine';
     if (lifts.insideCar(P.pos) || hotel.insideCar(P.pos)) return 'lift';
     if (P.mech) return 'mech';
@@ -1436,6 +1447,8 @@ function startGame(myName) {
     const p = P.pos; let best = null, bd = 1e9;
     const cand = (x, z, r, key, y = 0) => { const d = Math.hypot(p.x - x, p.z - z); if (d < r && d < bd && Math.abs(p.y - y) < 5) { bd = d; best = key; } };
     for (const s2 of learnSpots) cand(s2.x, s2.z, s2.r, s2.key, s2.y);
+    if (FAN_SPOTS.length > 4000) FAN_SPOTS.splice(0, FAN_SPOTS.length - 3000);
+    for (const f of FAN_SPOTS) cand(f.x, f.z, 2.4, 'fan', f.y);
     PARK.forEach(v => cand(v.x, v.z, v.k === 'jumbo' ? 16 : v.k === 'bike' ? 2.5 : 7, v.k, v.y));
     campers.list.forEach(c => c.inter && cand(c.inter.pos.x, c.inter.pos.z, 7, 'camper', c.inter.pos.y));
     traffic.cars.forEach(c => { if (c.alive && !c.knock) cand(c.x, c.z, 4.5, c.kind || 'sedan'); });
@@ -1669,7 +1682,7 @@ function startGame(myName) {
     } else { if (r.mech) r.mech.visible = false; r.av.visible = true; }
   }
 
-  if (location.search.includes('debug')) window.__g = { learn, peds, themeParks, learnNear, doPunch, world, traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
+  if (location.search.includes('debug')) window.__g = { quiz, liftFix, learn, peds, themeParks, learnNear, doPunch, world, traffic, events, jail, river, mtr, sky, lohas, nightLock, PARK, shuttleStand, redLight, boatTicket, shuttle, mechDash, toggleShield, say, school, pick: (x, z) => { const f = mapPick; if (f) { closeMap(); f(x, z); } }, P, E, lifts, vault, apartments, remotes, P_api: api, park, hotel, campers, city, airport, arena, village, net, api, camera, scene, setFP: v => { firstPerson = v; }, tick: n => { for (let i = 0; i < n; i++) frame(); }, cam: (y, p, d) => { camYaw = y; camPitch = p; if (d) camDist = d; } };
 
   // ================= 主迴圈 =================
   const clock = new THREE.Clock();
@@ -1687,7 +1700,9 @@ function startGame(myName) {
     let ix = joy.x, iy = joy.y;
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
-    if (school.active() || nightLock.locked()) { ix = iy = 0; }
+    if (school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
+    quiz.update(dt, school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
+    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = quiz.active() ? '📝 英文小測中' : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後英文小測`; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);

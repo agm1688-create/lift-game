@@ -1,7 +1,7 @@
 // 地鐵（港鐵 10 條綫、98 個站）：地面有每個站嘅入口，入去係地底大堂 + 月台，入閘揀目的地，上車有中英文報站
 import * as THREE from 'three';
 import { Batch, CHUNK, EXCL } from './city.js';
-import { IM, signMat, sign } from './interiors.js';
+import { IM, signMat, sign, exhaustFan } from './interiors.js';
 import * as TX from './textures.js';
 import { ST, LINES, WALKS, geo } from './mtr_data.js';
 import { buildAvatar, animateAvatar, SKINS, SHIRTS, HAIRS, PANTS } from './avatar.js';
@@ -155,6 +155,7 @@ export function buildMTR(scene, api) {
   b(7, 0, -42, 11, 3.4, -2, trainM, false);
   for (let z = -40; z < -3; z += 4.5) b(6.95, 1.2, z, 7, 2.2, z + 3, std('#1e2a33'), false);
   const stripeMat = std('#c62828'); b(6.94, 0.5, -42, 6.96, 0.8, -2, stripeMat, false);
+  exhaustFan(B, X - 15.97, 3.4, Z + 14.5, '+x');
   const g = B.build(); scene.add(g);
   // 動態站名牌
   const boards = [];

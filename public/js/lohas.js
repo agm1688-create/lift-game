@@ -2,7 +2,7 @@
 // 豪景花園門口有直通直升機 / 小巴嚟呢度；呢度都有直升機坪同小巴站返豪景花園
 import * as THREE from 'three';
 import { Batch, FAC, MAT, tree, planeGeo, LOHAS } from './city.js';
-import { IM, signMat, sign, plant } from './interiors.js';
+import { IM, signMat, sign, plant, exhaustFan } from './interiors.js';
 import * as TX from './textures.js';
 
 const V3 = THREE.Vector3;
@@ -70,6 +70,7 @@ export function buildLohas(scene, api) {
   sign(B, LOHAS_BUS.x + 3, 3.4, LOHAS_BUS.z, 9, 1.2, signMat('🚐 小巴總站：往豪景花園', '#2e7d32'), '-x');
   inter.push({ pos: new V3(LOHAS_PAD.x - 12, 0, LOHAS_PAD.z), r: 4, label: () => '🚁 搭直通直升機返豪景花園', act: () => api.shuttle('heli', 'village') });
   inter.push({ pos: new V3(LOHAS_BUS.x + 3, 0, LOHAS_BUS.z), r: 4, label: () => '🚐 搭小巴返豪景花園', act: () => api.shuttle('minibus', 'village') });
+  exhaustFan(B, 4679.55, 4.5, 2600, '-x');
   const g = B.build(); scene.add(g);
   function update(p) { const near = p.x > L.x0 - 2500 && p.z > L.z0 - 2500 && p.z < L.z1 + 2500; g.visible = sea.visible = sea2.visible = sea3.visible = pad.visible = near || p.y > 300; }
   return { colliders: B.cols, interactables: inter, update, center: new V3(4400, 0.1, 2600), pad: new V3(LOHAS_PAD.x, 0, LOHAS_PAD.z), bus: new V3(LOHAS_BUS.x, 0, LOHAS_BUS.z) };

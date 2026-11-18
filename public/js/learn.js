@@ -10,6 +10,7 @@ import { buildBoat } from './river.js';
 import { buildMech } from './arena.js';
 import { buildTrain } from './skytrain.js';
 import { PARTS as ROOM_PARTS } from './liftroom.js';
+import { fanModel } from './interiors.js';
 
 const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, ...e });
 function grp(fn) { const g = new THREE.Group(); const box = (w, h, d, c, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), std(c)); m.position.set(x, y, z); g.add(m); return m; }; const cyl = (r0, r1, h, c, x, y, z, rx = 0, rz = 0) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 20), std(c)); m.position.set(x, y, z); m.rotation.set(rx, 0, rz); g.add(m); return m; }; fn(box, cyl, g); return g; }
@@ -52,6 +53,7 @@ export const MACHINES = {
   boat: { zh: '觀光船', en: 'Tour boat', m: () => buildBoat(), parts: P('⚓/錨/anchor|🛟/救生圈/life buoy|🦺/救生衣/life jacket|🚩/旗/flag|☸️/舵盤/ship\'s wheel|🔧/引擎/engine|🌀/螺旋槳/propeller|🪑/長凳/bench|⛱/上蓋/canopy') },
   mech: { zh: '巨型機甲', en: 'Giant robot', m: () => buildMech(0), parts: P('🧑‍✈️/駕駛艙/cockpit|🛡/盾牌/shield|🚀/噴射器/jet thrusters|👊/拳頭/fist|⚡/光炮/laser cannon|🦿/機械腳/robot legs|🔋/能量核心/power core|📡/感應器/sensors') },
   cable: { zh: '纜車', en: 'Cable car', m: MODELS.cable, parts: P('🪢/鋼纜/steel cable|🚡/車廂/cabin|🗼/鐵塔/tower|⚙️/驅動輪/drive wheel|🏛/纜車站/station|🔒/門鎖/door lock|🪟/玻璃窗/glass windows') },
+  fan: { zh: '抽氣扇（前方後圓）', en: 'Exhaust fan', m: () => fanModel(), parts: P('🌀/扇葉/fan blades|⚙️/摩打/motor|⬛/方形外框/square frame|⚪/圓形摩打殼/round motor housing|🕸/防護網/safety grille|🪢/拉掣/pull cord switch|🔌/電線/power cable|🔩/螺絲/screws|💨/抽走熱氣/takes out hot air') },
   wheel: { zh: '摩天輪', en: 'Ferris wheel', m: MODELS.wheel, parts: P('🎡/輪盤/wheel|🚃/車廂/gondola|🦯/支架/support legs|⚙️/摩打/motor|💡/彩燈/lights|🎛/控制室/control room|🪢/鋼纜/steel cables') },
 };
 

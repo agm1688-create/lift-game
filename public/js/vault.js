@@ -2,7 +2,7 @@
 // 入面有成幅牆嘅保險箱、中間有張枱放住你打開咗嘅保險箱，見到入面有幾多條金條 / 銀條
 import * as THREE from 'three';
 import { Batch } from './city.js';
-import { IM, signMat, sign } from './interiors.js';
+import { IM, signMat, sign, exhaustFan } from './interiors.js';
 import { goldMat, buildAvatar } from './avatar.js';
 
 export const VAULT = { x: 6600, z: -300 };
@@ -62,6 +62,7 @@ export function buildVault(scene, api) {
   [-2.6, 2.6].forEach(x => { b(x - 0.25, 0.42, 0.7, x + 0.25, 0.48, 1.2, std('#1d3b6e'), true); b(x - 0.25, 0.48, 1.12, x + 0.25, 1.0, 1.2, std('#1d3b6e'), false); });
   b(W - 0.9, H - 0.6, D - 0.9, W - 0.5, H - 0.35, D - 0.5, std('#222'), false);
   sign(B, X - W + 0.12, 2.0, Z + 2.5, 3.2, 1.1, signMat('保險箱只可以存放：金條 🥇、銀條 🥈｜❌ 唔可以存放現金', '#7a1f1f', '#fff', 'bold 30px sans-serif'), '+x');
+  exhaustFan(B, X + 5.5, 2.7, Z + D - 0.02, '-z');
   const g = B.build(); scene.add(g);
 
   // 抽屜入面嘅金條 / 銀條（數量跟住你存咗幾多而變）

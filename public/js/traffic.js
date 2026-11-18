@@ -102,6 +102,87 @@ export function buildTraffic(scene, api) {
     if (lamps.instanceColor) lamps.instanceColor.needsUpdate = true;
   }
 
+  // ===== 行人過路：斑馬線、行人燈（有倒數秒數）、黃波燈 =====
+  const white = new THREE.MeshStandardMaterial({ color: '#f4f4f4', roughness: 0.8 });
+  const stripes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.02, 1), white, 2400);
+  const pPoles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.07, 2.9, 8).translate(0, 1.45, 0), poleM, 400);
+  const pHeads = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.66, 0.2).translate(0, 2.6, 0), boxM, 400);
+  const pLamps = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.24, 0.24), new THREE.MeshBasicMaterial({ color: '#fff' }), 800);
+  const bPoles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.09, 3, 10).translate(0, 1.5, 0), new THREE.MeshStandardMaterial({ color: '#1b1b1b' }), 200);
+  const bRings = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.1, 0.32, 10), white, 600);
+  const globeM = new THREE.MeshStandardMaterial({ color: '#ffb300', emissive: '#ff9800', emissiveIntensity: 1.6 });
+  const bGlobes = new THREE.InstancedMesh(new THREE.SphereGeometry(0.3, 14, 10), globeM, 200);
+  [stripes, pPoles, pHeads, pLamps, bPoles, bRings, bGlobes].forEach(m => { m.count = 0; m.frustumCulled = false; scene.add(m); });
+  for (let i = 0; i < 800; i++) pLamps.setColorAt(i, new THREE.Color('#222'));
+  let pedList = [];   // { x, z, face, arm: 'ns'|'ew', jx, jz }
+  // 行人燈：過 南北 嗰兩條 arm（行東西方向）= 南北車紅燈先綠；倒數 = 仲有幾多秒轉
+  const PED = { ew: [13, 21, 24], ns: [0, 8, 11] };   // [綠燈開始, 開始閃, 轉紅]
+  const pedAt = (tMs, x, z, arm) => {
+    const u = ((tMs / 1000 + hash(Math.round(x), Math.round(z)) * CYCLE) % CYCLE + CYCLE) % CYCLE, [g0, f0, r0] = PED[arm];
+    if (u >= g0 && u < f0) return { st: 'g', left: r0 - u };
+    if (u >= f0 && u < r0) return { st: 'f', left: r0 - u };
+    return { st: 'r', left: ((g0 - u) % CYCLE + CYCLE) % CYCLE };
+  };
+  const stripe = (i, x, z, sx, sz) => { m4.compose(new V3(x, 0.03, z), q.identity(), new V3(sx, 1, sz)); stripes.setMatrixAt(i, m4); };
+  function rebuildCrossings(p) {
+    let si = 0, hi = 0, bi = 0, ri = 0;
+    pedList = [];
+    const qy = new THREE.Quaternion();
+    const head = (x, z, face, arm, jx, jz) => { if (hi >= 400) return; qy.setFromAxisAngle(new V3(0, 1, 0), face); m4.compose(new V3(x, 0, z), qy, s1); pPoles.setMatrixAt(hi, m4); pHeads.setMatrixAt(hi, m4);
+      [0, 1].forEach(k => { const off = new V3(0, 2.78 - k * 0.34, 0.105).applyQuaternion(qy); m4.compose(new V3(x + off.x, off.y, z + off.z), qy, s1); pLamps.setMatrixAt(hi * 2 + k, m4); });
+      pedList.push({ x, z, arm, jx, jz }); hi++; };
+    // 交通燈路口：四邊都有斑馬線 + 行人燈
+    for (const j of junctionsNear(p.x, p.z, 260)) {
+      [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([ax, az], k) => {
+        if (!j.inner && !j.arms[[3, 2, 1, 0][k]]) return;
+        const cx = j.x + ax * 8.5, cz = j.z + az * 8.5, alongX = ax === 0;   // alongX：斑馬線橫跨南北走嘅路
+        for (let b = -5.5; b <= 5.5; b += 1.1) if (si < 2400) stripe(si++, alongX ? j.x + b : cx, alongX ? cz : j.z + b, alongX ? 0.55 : 3.2, alongX ? 3.2 : 0.55);
+        const arm = alongX ? 'ew' : 'ns';
+        if (alongX) { head(j.x - 7.4, cz, Math.PI / 2, arm, j.x, j.z); head(j.x + 7.4, cz, -Math.PI / 2, arm, j.x, j.z); }
+        else { head(cx, j.z - 7.4, 0, arm, j.x, j.z); head(cx, j.z + 7.4, Math.PI, arm, j.x, j.z); }
+      });
+    }
+    // 路中間嘅斑馬線（冇燈，有黃波燈）
+    const R = 260;
+    for (let L = lineOf(p.z - R); L <= p.z + R; L += CHUNK) for (let m = Math.round((p.x - R) / CHUNK) * CHUNK + 50; m <= p.x + R; m += CHUNK) {
+      if (!segOK(m - 150, L, m + 50, L) || inExcl(m, L, -8)) continue;
+      for (let b = -5.5; b <= 5.5; b += 1.1) if (si < 2400) stripe(si++, m, L + b, 3.2, 0.55);
+      [[m - 2, L - 7.6], [m + 2, L + 7.6]].forEach(([x, z]) => { if (bi >= 200) return; m4.compose(new V3(x, 0, z), q.identity(), s1); bPoles.setMatrixAt(bi, m4); m4.compose(new V3(x, 3.25, z), q.identity(), s1); bGlobes.setMatrixAt(bi, m4); for (let r = 0; r < 3; r++) { m4.compose(new V3(x, 0.5 + r * 0.8, z), q.identity(), s1); bRings.setMatrixAt(ri++, m4); } bi++; });
+    }
+    for (let L = lineOf(p.x - R); L <= p.x + R; L += CHUNK) for (let m = Math.round((p.z - R) / CHUNK) * CHUNK + 50; m <= p.z + R; m += CHUNK) {
+      if (!segOK(L, m - 150, L, m + 50) || inExcl(L, m, -8)) continue;
+      for (let b = -5.5; b <= 5.5; b += 1.1) if (si < 2400) stripe(si++, L + b, m, 0.55, 3.2);
+      [[L - 7.6, m - 2], [L + 7.6, m + 2]].forEach(([x, z]) => { if (bi >= 200) return; m4.compose(new V3(x, 0, z), q.identity(), s1); bPoles.setMatrixAt(bi, m4); m4.compose(new V3(x, 3.25, z), q.identity(), s1); bGlobes.setMatrixAt(bi, m4); for (let r = 0; r < 3; r++) { m4.compose(new V3(x, 0.5 + r * 0.8, z), q.identity(), s1); bRings.setMatrixAt(ri++, m4); } bi++; });
+    }
+    stripes.count = si; pPoles.count = pHeads.count = hi; pLamps.count = hi * 2; bPoles.count = bGlobes.count = bi; bRings.count = ri;
+    [stripes, pPoles, pHeads, pLamps, bPoles, bRings, bGlobes].forEach(m => m.instanceMatrix.needsUpdate = true);
+  }
+  // 倒數秒數牌（只係最近嗰個路口，慳資源）
+  const cds = [];
+  for (let k = 0; k < 8; k++) {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64; const tex = new THREE.CanvasTexture(c);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true })); sp.scale.set(0.5, 0.5, 1); sp.visible = false; scene.add(sp);
+    cds.push({ c, tex, sp, last: '' });
+  }
+  function paintPeds(t, p) {
+    const flashOn = Math.floor(t / 400) % 2 === 0;
+    pedList.forEach((h, i) => {
+      const s = pedAt(t, h.jx, h.jz, h.arm);
+      pLamps.setColorAt(i * 2, col.set(s.st === 'r' ? '#ff2b2b' : '#3d1010'));
+      pLamps.setColorAt(i * 2 + 1, col.set(s.st === 'g' || (s.st === 'f' && flashOn) ? '#20e070' : '#0f3320'));
+    });
+    if (pLamps.instanceColor) pLamps.instanceColor.needsUpdate = true;
+    globeM.emissiveIntensity = Math.floor(t / 500) % 2 ? 0.15 : 1.8;
+    // 最近嘅 8 支行人燈出倒數
+    const near = pedList.map(h => ({ h, d: Math.hypot(h.x - p.x, h.z - p.z) })).filter(o => o.d < 45).sort((a, b) => a.d - b.d).slice(0, 8);
+    cds.forEach((c, k) => {
+      const o = near[k]; if (!o) { c.sp.visible = false; return; }
+      const s = pedAt(t, o.h.jx, o.h.jz, o.h.arm), txt = String(Math.ceil(s.left)), key = txt + s.st;
+      c.sp.visible = true; c.sp.position.set(o.h.x, 3.15, o.h.z);
+      if (c.last !== key) { c.last = key; const g = c.c.getContext('2d'); g.clearRect(0, 0, 64, 64); g.fillStyle = '#111'; g.fillRect(4, 8, 56, 48); g.fillStyle = s.st === 'r' ? '#ff5252' : '#69f0ae'; g.font = 'bold 40px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt.padStart(2, '0'), 32, 34); c.tex.needsUpdate = true; }
+    });
+  }
+
   // ===== 車 =====
   const NCAR = api.isTouch ? 14 : 22;
   const cars = [];
@@ -139,7 +220,7 @@ export function buildTraffic(scene, api) {
     let target = c.vmax;
     // 交通燈：停喺停車線（路口中心前 9.5 米）
     const L = lightAt(t, n.x, n.z)[dx ? 'ew' : 'ns'];
-    const stopAt = dist - 9.5;
+    const stopAt = dist - 11.5;   // 停喺斑馬線前面
     if (L !== 'g' && stopAt > -0.5 && stopAt < 45 && !(L === 'y' && stopAt < 6)) target = Math.min(target, Math.max(0, stopAt * 0.6));
     // 前面有車
     for (const o of cars) {
@@ -228,9 +309,10 @@ export function buildTraffic(scene, api) {
   function update(dt, t, p, riding) {
     const inWorld = Math.abs(p.x) < HALF_WORLD && Math.abs(p.z) < HALF_WORLD && p.y < 60;
     const cell = Math.round(p.x / 100) + ',' + Math.round(p.z / 100);
-    if (cell !== lastCell) { lastCell = cell; rebuildLights(p); }
+    if (cell !== lastCell) { lastCell = cell; rebuildLights(p); rebuildCrossings(p); }
     poles.visible = heads.visible = lamps.visible = inWorld;
-    lightT -= dt; if (lightT <= 0) { lightT = 0.25; paintLights(t); }
+    [stripes, pPoles, pHeads, pLamps, bPoles, bRings, bGlobes].forEach(m => m.visible = inWorld); if (!inWorld) cds.forEach(c => c.sp.visible = false);
+    lightT -= dt; if (lightT <= 0) { lightT = 0.25; paintLights(t); if (inWorld) paintPeds(t, p); }
     playerHold = 0;
     for (const c of cars) {
       if (!inWorld) { c.m.visible = false; c.alive = false; continue; }

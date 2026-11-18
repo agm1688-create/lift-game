@@ -4,7 +4,7 @@
 // 所有座 / 所有樓層共用同一個模板（喺地圖以外），HUD 顯示你身處邊座幾樓
 import * as THREE from 'three';
 import { Batch } from './city.js';
-import { IM, signMat, sign } from './interiors.js';
+import { IM, signMat, sign, exhaustFan } from './interiors.js';
 import * as TX from './textures.js';
 
 export const APT = { x: 6600, z: 0 };
@@ -151,6 +151,7 @@ export function buildApartments(scene, api) {
     [[1.5, 1.6], [W / 2 + 1, 2.8], [1.9, 7.2], [4.7, 7.3], [(5.6 + W) / 2, 7.3]].forEach(([u, v]) => fb(u - 0.35, v - 0.35, u + 0.35, v + 0.35, H - 0.04, H - 0.01, M.light, false));
     const [cx, cz] = P(W / 2, 4.5);
     UNITS.push({ letter, x0, x1, side, cx: X + cx, cz: Z + cz });
+    { const [fx, fz] = P(T + 0.02, 1.0); exhaustFan(B, X + fx, 2.2, Z + fz, '+x'); }
     // 互動：開燈 / 煮嘢食 / 瞓覺
     const at = (u, v) => { const [a, b] = P(u, v); return new THREE.Vector3(X + a, 0, Z + b); };
     inter.push({ pos: at(1.1, 1.5), r: 1.2, label: () => '🍳 喺廚房煮個公仔麵', act: () => api.toast('🍜 煮咗一碗公仔麵加蛋，好香！', 2500) });

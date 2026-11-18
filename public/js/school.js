@@ -2,7 +2,7 @@
 // 答啱 2 條就可以返去上一刻嘅位置；唔揀 / 唔答，就要等 20 分鐘先返得去玩
 import * as THREE from 'three';
 import { Batch } from './city.js';
-import { IM, signMat, sign } from './interiors.js';
+import { IM, signMat, sign, exhaustFan } from './interiors.js';
 import { buildAvatar } from './avatar.js';
 import { numWords } from './english.js';
 
@@ -70,6 +70,7 @@ export function buildSchool(scene, api) {
     b(x - 0.2, 0.42, z + 0.45, x + 0.2, 0.46, z + 0.85, blue, false); b(x - 0.2, 0.46, z + 0.8, x + 0.2, 0.9, z + 0.85, blue, false);
     B.cols.push({ min: [X + x - 0.4, 0, Z + z - 0.3], max: [X + x + 0.4, 0.74, Z + z + 0.3] });
   }
+  exhaustFan(B, X + 5, 2.5, Z + D - 0.02, '-z');
   const g = B.build(); scene.add(g);
   const teacher = buildAvatar({ gender: 'f', skin: '#f1c27d', hat: 'none', shirt: '#8e24aa', pants: '#37474f', hair: '#4e2a12' });
   teacher.position.set(X + 2.5, 0, Z - D + 2.6); scene.add(teacher);
