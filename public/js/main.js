@@ -26,7 +26,7 @@ import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, T
 import { buildTraffic } from './traffic.js';
 import { buildEvents } from './events.js';
 import { buildJail } from './jail.js';
-import { buildNightLock, askPassword } from './nightlock.js';
+import { buildNightLock, askPassword, askLogin } from './nightlock.js';
 import { buildRiver, SEATS as BOAT_SEATS, buildBoat, PATH as BOAT_PATH } from './river.js';
 import { buildMTR, ENTR as MTR_ENTR } from './mtr.js';
 import { ST as MTR_ST, LINES as MTR_LINES } from './mtr_data.js';
@@ -130,13 +130,15 @@ $('go').onclick = () => {
   store.set('look', look); store.set('name', name);
   initAudio(); unlockSpeech();
   if (isTouch) enterFullscreen(false);
-  pv.run = false; pv.r.dispose();
-  $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
-  startGame(name);
+  askLogin({ store, sfx: { click: () => {} } }, role => {
+    pv.run = false; pv.r.dispose();
+    $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
+    startGame(name, role);
+  });
 };
 
 // ================= 遊戲 =================
-function startGame(myName) {
+function startGame(myName, role = 'player') {
   const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !isTouch, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
@@ -211,6 +213,7 @@ function startGame(myName) {
     closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     return [+P.pos.x.toFixed(2), wasAir ? 0.1 : +(P.pos.y + 0.05).toFixed(2), +P.pos.z.toFixed(2)];
   };
+  api.admin = role === 'admin';
   const school = buildSchool(scene, api);
   setTimeout(() => school.resume(), 0);
   // ===== 新功能：英文聽力、監倉、城市河、地鐵、空中輕軌、日出康城、夜晚鎖 =====
@@ -222,7 +225,8 @@ function startGame(myName) {
   api.blocked = () => jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
   const liftFix = buildLiftFix({ store, sfx, say });
   const quiz = buildQuiz({ store, sfx, say, onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
-  setTimeout(() => quiz.resume(), 0);
+  if (role === 'admin') { quiz.state.mode = null; quiz.state.q = null; setTimeout(() => toast('🔑 管理員登入：唔使做小測', 3500), 800); }
+  else setTimeout(() => quiz.resume(), 0);
   api.boatTicket = () => boatTicket();
   api.shuttle = (k, to) => shuttle(k, to);
   api.spraying = () => P.spraying; api.pos = () => P.pos;
@@ -1729,8 +1733,8 @@ function startGame(myName) {
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
     if (school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
-    quiz.update(dt, school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
-    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = quiz.active() ? '📝 英文小測中' : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後英文小測`; }
+    if (!api.admin) quiz.update(dt, school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
+    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin ? '📝 管理員：免小測' : quiz.active() ? '📝 英文小測中' : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後英文小測`; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);

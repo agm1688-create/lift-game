@@ -1,7 +1,7 @@
 // 英文小測（香港小學二年級程度）
 // 每玩 5 分鐘：英文文法 MC（A / B / C），要連續答啱 2 條先可以繼續；答錯就要再答多一條
 // 文法過關後 3 分鐘：英文生字 MC（睇英文揀中文意思），答錯唔罰，答啱為止
-export const GRAMMAR_EVERY = 5 * 60, VOCAB_AFTER = 3 * 60, NEED = 2;
+export const GRAMMAR_EVERY = 3 * 60, VOCAB_AFTER = 3 * 60, NEED = 2;
 // [題目, [A, B, C], 正確答案 index, 提示]
 const G = [
   // 單數 / 眾數

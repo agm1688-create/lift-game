@@ -20,12 +20,42 @@ export function hkNow(d = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(d).map(p => [p.type, p.value]));
   return { y: parts.year, m: parts.month, d: parts.day, h: (+parts.hour) % 24 };
 }
+export const ADMIN_PW = '8844';
+export const todayPw = () => { const n = hkNow(); return `${n.y}${n.m}${n.d}`; };
+export const nightId = () => { const n = hkNow(); if (n.h >= 22) return `${n.y}${n.m}${n.d}`; const y = hkNow(new Date(Date.now() - 864e5)); return `${y.y}${y.m}${y.d}`; };
+export const isNight = () => { const h = hkNow().h; return h >= 22 || h < 6; };
+const injectCSS = () => { if (document.getElementById('nlCSS')) return; const st = document.createElement('style'); st.id = 'nlCSS'; st.textContent = CSS; document.head.appendChild(st); };
+// 登入密碼：8844 = 管理員（唔使做小測）；今日日期（年月日 8 個數字）= 普通玩家
+export function askLogin(api, onOk) {
+  injectCSS();
+  let el = document.getElementById('pwAsk');
+  if (!el) { el = document.createElement('div'); el.id = 'pwAsk'; document.body.appendChild(el); }
+  let input = '';
+  const onKey = e => { if (/^Digit\d$|^Numpad\d$/.test(e.code)) key(e.code.slice(-1)); else if (e.code === 'Backspace') key('del'); else if (e.code === 'Enter' || e.code === 'NumpadEnter') key('ok'); else return; e.preventDefault(); e.stopPropagation(); };
+  function render(msg = '') {
+    el.innerHTML = `<div class="nb"><h2>🔑 登入遊戲</h2><div class="sub">請輸入登入密碼</div>
+      <div class="pw">${input.replace(/./g, '●') || '&nbsp;'}</div><div class="msg">${msg}</div>
+      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-k="${k}">${k}</button>`).join('')}<button class="del" data-k="del">⌫</button><button data-k="0">0</button><button class="ok" data-k="ok">✔</button></div></div>`;
+    el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
+  }
+  function key(k) {
+    api.sfx?.click?.();
+    if (/^\d$/.test(k)) { if (input.length < 8) input += k; return render(); }
+    if (k === 'del') { input = input.slice(0, -1); return render(); }
+    if (k !== 'ok') return;
+    const role = input === ADMIN_PW ? 'admin' : input === todayPw() ? 'player' : null;
+    if (!role) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); return render('❌ 密碼唔啱，再試過'); }
+    el.style.display = 'none'; removeEventListener('keydown', onKey, true);
+    if (isNight()) api.store?.set('nightOK', nightId());   // 夜晚登入咗就唔使再輸多次
+    onOk(role);
+  }
+  addEventListener('keydown', onKey, true);
+  render(); el.style.display = 'flex';
+}
 export function buildNightLock(api) {
-  const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+  injectCSS();
   const el = document.createElement('div'); el.id = 'nightLock'; document.body.appendChild(el);
   let input = '', locked = false;
-  const nightId = () => { const n = hkNow(); if (n.h >= 22) return `${n.y}${n.m}${n.d}`; const y = hkNow(new Date(Date.now() - 864e5)); return `${y.y}${y.m}${y.d}`; };
-  const isNight = () => { const h = hkNow().h; return h >= 22 || h < 6; };
   const password = () => { const n = hkNow(); return `${n.y}${n.m}${n.d}`; };
   function render(msg = '') {
     el.innerHTML = `<div class="nb"><h2>🌙 夜喇，夠鐘瞓覺！</h2>
@@ -40,7 +70,7 @@ export function buildNightLock(api) {
     if (/^\d$/.test(k)) { if (input.length < 8) input += k; return render(); }
     if (k === 'del') { input = input.slice(0, -1); return render(); }
     if (k === 'ok') {
-      if (input === password()) { api.store.set('nightOK', nightId()); locked = false; el.style.display = 'none'; input = ''; api.sfx?.pickup(); api.toast?.('🔓 密碼啱，可以繼續玩。唔好玩太夜呀！', 3500); return; }
+      if (input === password() || input === ADMIN_PW) { api.store.set('nightOK', nightId()); locked = false; el.style.display = 'none'; input = ''; api.sfx?.pickup(); api.toast?.('🔓 密碼啱，可以繼續玩。唔好玩太夜呀！', 3500); return; }
       input = ''; api.sfx?.error(); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
       return render('❌ 密碼唔啱，再試過');
     }

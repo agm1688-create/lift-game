@@ -163,7 +163,7 @@ export function buildSchool(scene, api) {
     api.sfx.ding();
   }
   // 重新整理之後：仲喺堂上就即刻返去課室
-  function resume() { if (S.lesson) { api.teleport(X - 2.4, 0.05, Z + 0.8); api.face(Math.PI); if (S.lesson.q) drawBoard(`${S.lesson.q.a} ${S.lesson.q.op} ${S.lesson.q.b} = ?`); render(); } }
+  function resume() { if (api.admin) { if (S.lesson) { S.lesson = null; save(); } return; } if (S.lesson) { api.teleport(X - 2.4, 0.05, Z + 0.8); api.face(Math.PI); if (S.lesson.q) drawBoard(`${S.lesson.q.a} ${S.lesson.q.op} ${S.lesson.q.b} = ?`); render(); } }
 
   function update(dt, pos) {
     const near = Math.abs(pos.x - X) < 300 && Math.abs(pos.z - Z) < 300; g.visible = board.visible = teacher.visible = near;
@@ -174,6 +174,7 @@ export function buildSchool(scene, api) {
       hint.textContent = `📚 上緊數學堂（答啱 ${S.lesson.correct}/${NEED}）`;
       return;
     }
+    if (api.admin) { hint.textContent = '📚 管理員：免上堂'; return; }
     if (api.blocked && api.blocked()) { hint.textContent = ''; return; }
     S.played += dt;
     const rem = PLAY_SEC - S.played;
