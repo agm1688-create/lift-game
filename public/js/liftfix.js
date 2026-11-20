@@ -1,4 +1,4 @@
-// 電梯維修小遊戲：每部 Lift 第一次用之前要先維修（約 10–20 秒）
+// 電梯維修小遊戲：每搭一次 Lift 有 30% 機會壞咗，要先維修（約 10–20 秒）
 // 跟住指示，按次序撳 5 個工具掣；每一步都會讀出英文
 const CSS = `
 #fixModal { position:fixed; inset:0; z-index:62; background:rgba(8,16,28,.82); display:none; align-items:center; justify-content:center; padding:8px; font-family:system-ui,sans-serif; }
@@ -30,12 +30,13 @@ export const FIX_STEPS = [
 export function buildLiftFix(api) {
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const el = document.createElement('div'); el.id = 'fixModal'; document.body.appendChild(el);
-  const fixed = new Set(api.store.get('liftFixed', []));
+  const CHANCE = 0.3;   // 每搭一次壞咗嘅機會
   let job = null;
-  const isFixed = key => fixed.has(key);
-  function gate(key, name, fn) {
-    if (fixed.has(key)) { fn(); return; }
+  const isFixed = () => true;
+  // roll = 呢個動作算唔算「搭一次」（例如揀樓層）；開門 / 關門 / 召 Lift 唔會壞
+  function gate(key, name, fn, roll = true) {
     if (job) return;
+    if (!roll || Math.random() >= CHANCE) { fn(); return; }
     start(key, name, fn);
   }
   function start(key, name, fn) {
@@ -74,7 +75,6 @@ export function buildLiftFix(api) {
   }
   function finish() {
     const J = job; job = null;
-    fixed.add(J.key); api.store.set('liftFixed', [...fixed]);
     const sec = ((performance.now() - J.t0) / 1000).toFixed(0);
     el.innerHTML = `<div class="fb"><h2>🎉 ${J.name} 整好咗！</h2><div class="step">用咗 ${sec} 秒，可以搭 Lift 喇 🛗</div><button class="x" style="background:#43a047;border:0;font-size:17px;padding:10px 24px">好！</button></div>`;
     api.sfx.ding(); api.say('Great job! The lift is working now. You can use it.', '好叻！部 Lift 整好咗，可以用喇。', { force: true, now: true });

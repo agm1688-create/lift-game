@@ -8,6 +8,9 @@ const ADMIN_PW = process.env.ADMIN_PASSWORD || '8844';
 const FILE = path.join(__dirname, 'data', 'accounts.json');
 const MAX_SESSIONS = 3000;
 
+// 每位會員嘅小測設定：程度 1–6、地區 HK / TW、每隔幾多分鐘、科目 en / math / mix、要連續答啱幾多條、有冇提示
+const DEF_QUIZ = { level: 2, region: 'HK', every: 3, subject: 'en', need: 2, tips: 1 };
+const quizOf = m => ({ ...DEF_QUIZ, ...(m.quiz || {}) });
 const DEF = { minPerCoin: 10, goldPerQuiz: 1, goldPerTimeCoin: 10, applyCoins: 3, applyOpen: 1 };
 let S = { settings: { ...DEF }, members: [], sessions: [], apps: [], nextId: 1, nextSid: 1, nextAid: 1 };
 let pool = null, dirty = false;
@@ -47,7 +50,7 @@ const coinSec = () => Math.max(1, Number(S.settings.minPerCoin) || 10) * 60;
 const timeLeft = m => Math.max(0, Math.round((m.creditSec || 0) + (m.timeCoins || 0) * coinSec()));
 const byId = id => S.members.find(m => m.id === id);
 const byName = name => S.members.find(m => m.name.toLowerCase() === String(name).trim().toLowerCase());
-const acct = m => ({ name: m.name, timeCoins: m.timeCoins, gold: m.gold, timeLeft: timeLeft(m), minPerCoin: S.settings.minPerCoin, goldPerTimeCoin: S.settings.goldPerTimeCoin });
+const acct = m => ({ name: m.name, timeCoins: m.timeCoins, gold: m.gold, timeLeft: timeLeft(m), minPerCoin: S.settings.minPerCoin, goldPerTimeCoin: S.settings.goldPerTimeCoin, quiz: quizOf(m) });
 
 // 登入失敗太多次就暫停（每個 IP）
 const fails = new Map();
@@ -149,7 +152,7 @@ const isAdmin = t => { const e = adminTokens.get(t); return !!e && e > Date.now(
 function adminState(onlineIds) {
   return {
     storage: storage(), settings: S.settings, now: Date.now(),
-    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id) })),
+    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m) })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
     helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
@@ -190,6 +193,17 @@ function adminAction(a) {
   else if (a.op === 'gold') m.gold = Math.max(0, (m.gold || 0) + num(a.n));
   else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
   else if (a.op === 'logoutAll') m.token = null;
+  else if (a.op === 'quiz') {
+    const q = a.quiz || {};
+    m.quiz = {
+      level: Math.min(6, Math.max(1, num(q.level) || 2)),
+      region: q.region === 'TW' ? 'TW' : 'HK',
+      every: Math.min(120, Math.max(1, num(q.every) || 3)),
+      subject: ['en', 'math', 'mix'].includes(q.subject) ? q.subject : 'en',
+      need: num(q.need) === 1 ? 1 : 2,
+      tips: q.tips ? 1 : 0,
+    };
+  }
   else if (a.op === 'delete') S.members = S.members.filter(x => x !== m);
   else return { err: '唔識呢個動作' };
   touch(); return { ok: true, changed: m.id };

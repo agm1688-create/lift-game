@@ -231,7 +231,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     toggleDog: () => openPetShop(),
     vet: () => { if (!P.pet) return toast('你未有寵物喎，去隔籬寵物店領養啦'); sfx.bark(); toast(`🩺 獸醫：你隻${PETS[petIndex(P.pet)].n}好健康！❤️`); },
     liftSpeed: i => { const L = lifts.lifts[i]; return L ? Math.sign(L.vy) : 0; },
-    keyPrompt, liftCmd: (id, cmd, floor) => liftFix.gate('lift' + id, id < 2 ? LIFT_DEF[id].name : `柏熙酒店 ${id - 1}號 Lift`, () => net.send({ t: 'lift', id, cmd, floor })),
+    keyPrompt, liftCmd: (id, cmd, floor) => liftFix.gate('lift' + id, id < 2 ? LIFT_DEF[id].name : `柏熙酒店 ${id - 1}號 Lift`, () => net.send({ t: 'lift', id, cmd, floor }), cmd === 'goto'),
     now: () => net.now(), playerY: () => P.pos.y,
     arrived: id => { const L = lifts.lifts[id]; if (Math.abs(P.pos.y - L.y) < 40) { sfx.ding(); if (lifts.insideCar(P.pos) === L) say(`Ding! This is floor ${numWords(Math.max(1, Math.round(L.floor)))}. The doors are opening.`, `叮！${floorLabel(Math.round(L.floor))} 樓到喇，開門喇。`, { force: true }); } },
   };
@@ -317,7 +317,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     const b = lockEl.querySelector('#exBtn'); if (b) b.onclick = () => { sfx.click(); net.send({ t: 'exchange' }); };
   }
   function acctShow(a, timeup) {
-    if (!a) return; acctNow = a; acctAt = performance.now();
+    if (!a) return; acctNow = a; acctAt = performance.now(); if (a.quiz) quiz.config(a.quiz);
     acctHint.style.display = 'block';
     if (timeup) { if (!timeLocked) { sfx.error(); say('Your play time is finished. Time to take a break!', '遊戲時間用完喇，休息吓啦！'); } acctLock('遊戲時間用完喇', true); }
     else if (timeLocked) { timeLocked = false; lockEl.style.display = 'none'; sfx.ding?.(); toast('⏳ 加咗時間，可以繼續玩！', 3000); }
@@ -1353,7 +1353,8 @@ function startGame(myName, role = 'player', memberToken = '') {
 
   // ================= 泊車：喺邊度落機 / 落車就泊喺邊度，交通工具唔會消失（記住喺呢部機）=================
   const PARK = store.get('parked', []).filter(v => v && v.k);
-  const savePark = () => store.set('parked', PARK.map(({ k, x, y, z, yaw, c }) => ({ k, x, y, z, yaw, c })));
+  const savePark = () => store.set('parked', PARK.map(({ k, x, y, z, yaw, c, t }) => ({ k, x, y, z, yaw, c, t })));
+  const HELI_KEEP = 72 * 3600e3;   // 直升機泊低 72 小時之後自動飛返機場
   const PARK_LABEL = { plane: '✈ 揸返你架小型飛機', heli: '🚁 揸返你架直升機', jumbo: '🛫 揸返你架巨無霸', fighter: '🛩 揸返你架戰鬥機', bike: '🏍 揸返你架電單車' };
   function showParked(v) {
     const m = v.k === 'bike' ? buildBike() : buildAircraft(v.k, v.c || '#e53935');
@@ -1365,6 +1366,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   function parkVeh(v) {
     if (v.k === 'bike') PARK.filter(o => o.k === 'bike').forEach(dropParked);
     else { const air = PARK.filter(o => o.k !== 'bike'); if (air.length >= 8) dropParked(air[0]); }
+    v.t = Date.now();
     Object.assign(v, { x: +v.x.toFixed(2), y: +Math.max(0, v.y).toFixed(2), z: +v.z.toFixed(2), yaw: +v.yaw.toFixed(3) });
     PARK.push(v); showParked(v); savePark();
   }
@@ -1372,7 +1374,13 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (v.k === 'bike') { dropParked(v); if (P.held) setHeld(P.held); P.bike = true; P.face = v.yaw; $('btnBike').classList.add('on'); sfx.click(); toast('🏍 揸返電單車'); say(...VEH.bike); return; }
     dropParked(v); startFlight(v.k, v.x, v.z, v.yaw, v.c, v.y);
   }
-  setTimeout(() => PARK.slice().forEach(showParked), 0);
+  function heliExpire(first) {
+    const now = Date.now();
+    PARK.filter(v => v.k === 'heli' && (v.t || 0) && now - v.t > HELI_KEEP).forEach(v => { dropParked(v); toast('🚁 你架直升機泊咗超過 72 小時，已經自己飛返機場', 4500); });
+    if (first) PARK.forEach(v => { if (v.k === 'heli' && !v.t) v.t = now; });
+  }
+  setTimeout(() => { heliExpire(true); savePark(); PARK.slice().forEach(showParked); }, 0);
+  setInterval(() => heliExpire(false), 60000);
   let lastBike = null;
   function stowBike() {
     if (!P.bike) return;
@@ -1639,7 +1647,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     P.flight = F; firstPerson = false; $('btnFP').classList.remove('on'); camPitch = 0.2; camYaw = yaw + Math.PI;
     $('flightPanel').classList.remove('hidden'); $('rbtn').classList.add('hidden'); sfx.whoosh();
     const vt = { plane: 100, jumbo: 220, fighter: 230 }[kind];
-    toast(kind !== 'heli' ? `✈ 撳住右下角「⬆」加油門，去到 ${vt} km/h 再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降` : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n只可以喺公路、機場或者停機坪降落', 6000);
+    toast(kind !== 'heli' ? `✈ 撳住右下角「⬆」加油門，去到 ${vt} km/h 再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降` : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n喺邊度都可以降落；落機後會泊喺度 72 小時', 6000);
   }
   function endFlight(noPark) {
     const F = P.flight; if (!F) return; scene.remove(F.model);
@@ -1818,7 +1826,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (timeLocked || school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
     if (!api.admin) quiz.update(dt, timeLocked || school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
     if (hudT === 0 && acctNow) { const left = Math.max(0, acctNow.timeLeft - (timeLocked ? 0 : (performance.now() - acctAt) / 1000)); acctHint.textContent = `⏳ 剩 ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}（時間幣 ${acctNow.timeCoins}）｜🪙 金幣 ${acctNow.gold}`; }
-    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin ? '📝 管理員：免小測' : quiz.active() ? '📝 英文小測中' : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後英文小測`; }
+    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin ? '📝 管理員：免小測' : quiz.active() ? `📝 ${quiz.subjectName()}小測中` : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後${quiz.subjectName()}小測`; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);

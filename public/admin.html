@@ -17,6 +17,7 @@
   .card h2 { font-size:16px; margin:0 0 10px; }
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
   label { display:flex; flex-direction:column; font-size:13px; color:var(--mute); gap:3px; }
+  select { font:inherit; padding:6px 8px; border:1px solid #cfd6e0; border-radius:8px; background:#fff; }
   input { font:inherit; padding:7px 9px; border:1px solid #cfd6e0; border-radius:8px; min-width:0; width:140px; }
   button { font:inherit; padding:7px 12px; border-radius:8px; border:1px solid #cfd6e0; background:#fff; cursor:pointer; }
   button.p { background:var(--acc); border-color:var(--acc); color:#fff; }
@@ -103,6 +104,15 @@
     </section>
 
     <section class="card">
+      <h2>📚 小測設定 <span class="sub">（每位會員自己一套：程度、幾耐出一次、科目、要答啱幾多條、有冇提示）</span></h2>
+      <div class="tbl"><table>
+        <thead><tr><th>會員</th><th>課程</th><th>程度</th><th>科目</th><th>每隔（分鐘）</th><th>要連續答啱</th><th>提示</th><th></th></tr></thead>
+        <tbody id="qBody"></tbody>
+      </table></div>
+      <div class="msg" id="qMsg"></div>
+    </section>
+
+    <section class="card">
       <h2>🕒 登入紀錄 <span class="sub">（最近 400 次）</span></h2>
       <div class="row" style="margin-bottom:8px"><label>只睇呢個會員<input id="fName" placeholder="全部"></label></div>
       <div class="tbl"><table>
@@ -157,8 +167,35 @@ async function refresh(first) {
     <td>${fmtT(m.lastLogin)}</td>
     <td class="num">${esc(m.lastIp) || '—'}</td>
     <td><button class="s" data-op="pin" data-id="${m.id}">改密碼</button> <button class="s" data-op="logoutAll" data-id="${m.id}" title="部機唔見咗嗰陣用：所有機要重新輸入密碼">登出所有機</button> <button class="s d" data-op="delete" data-id="${m.id}">刪除</button></td></tr>`).join('') : '<tr><td colspan="8" class="sub">未有會員，喺上面開一個。</td></tr>';
+  renderQuiz(first);
   renderSessions();
 }
+const qDirty = new Set();
+function renderQuiz(force) {
+  const tb = $('qBody');
+  if (!force && (qDirty.size || tb.contains(document.activeElement))) return;   // 改緊就唔好覆蓋
+  const opt = (v, list) => list.map(([k, t]) => `<option value="${k}"${String(k) === String(v) ? ' selected' : ''}>${t}</option>`).join('');
+  tb.innerHTML = data.members.length ? data.members.map(m => { const q = m.quiz || {}; return `<tr data-id="${m.id}">
+    <td><b>${esc(m.name)}</b></td>
+    <td><select data-k="region">${opt(q.region, [['HK', '香港'], ['TW', '台灣']])}</select></td>
+    <td><select data-k="level">${opt(q.level, [1, 2, 3, 4, 5, 6].map(n => [n, `小${'一二三四五六'[n - 1]}（${n} 年級）`]))}</select></td>
+    <td><select data-k="subject">${opt(q.subject, [['en', '英文'], ['math', '數學'], ['mix', '英文 + 數學']])}</select></td>
+    <td><input data-k="every" type="number" min="1" max="120" value="${q.every}" style="width:70px"></td>
+    <td><select data-k="need">${opt(q.need, [[2, '2 條'], [1, '1 條']])}</select></td>
+    <td><label style="flex-direction:row;align-items:center;gap:4px;color:var(--ink)"><input data-k="tips" type="checkbox" style="width:auto"${q.tips ? ' checked' : ''}>有提示</label></td>
+    <td><button class="s p" data-qsave="${m.id}">儲存</button></td></tr>`; }).join('') : '<tr><td colspan="8" class="sub">未有會員</td></tr>';
+}
+$('qBody').addEventListener('input', e => { const tr = e.target.closest('tr[data-id]'); if (tr) { qDirty.add(+tr.dataset.id); tr.querySelector('[data-qsave]').textContent = '儲存 *'; } });
+$('qBody').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-qsave]'); if (!b) return;
+  const tr = b.closest('tr'), id = +tr.dataset.id, v = k => tr.querySelector(`[data-k="${k}"]`);
+  const quiz = { region: v('region').value, level: +v('level').value, subject: v('subject').value, every: +v('every').value, need: +v('need').value, tips: v('tips').checked };
+  qDirty.delete(id);
+  const m = data.members.find(x => x.id === id);
+  await act({ op: 'quiz', id, quiz }, $('qMsg'));
+  msg($('qMsg'), `已經更新「${m ? m.name : ''}」嘅小測設定（喺線嘅話即刻生效）`, true);
+  renderQuiz(true);
+});
 function renderSessions() {
   if (!data) return;
   const f = $('fName').value.trim().toLowerCase();

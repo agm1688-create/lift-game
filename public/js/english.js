@@ -1,9 +1,9 @@
 // 英文聽力：唔同情景（搭車、買嘢、銀行、上堂、交通燈…）都會用瀏覽器內置把聲講英文
 // 畫面同時出英文字幕 + 中文意思，幫小朋友練 listening
 const CSS = `
-#engSub { position:fixed; left:50%; bottom:calc(128px + env(safe-area-inset-bottom)); transform:translateX(-50%); max-width:min(680px,92vw); background:rgba(13,40,80,.9); color:#fff; border:2px solid #64b5f6; border-radius:14px; padding:6px 14px; font:600 17px system-ui,sans-serif; text-align:center; z-index:70; pointer-events:none; transition:opacity .3s; opacity:0; }
+#engSub { position:fixed; left:50%; bottom:calc(10px + env(safe-area-inset-bottom)); transform:translateX(-50%); max-width:min(580px,56vw); background:rgba(13,40,80,.9); color:#fff; border:2px solid #64b5f6; border-radius:14px; padding:6px 14px; font:600 17px system-ui,sans-serif; text-align:center; z-index:70; pointer-events:none; transition:opacity .3s; opacity:0; }
 #engSub small { display:block; font-size:13px; color:#bbdefb; font-weight:400; }
-@media (max-height:500px) { #engSub { font-size:14px; bottom:calc(96px + env(safe-area-inset-bottom)); padding:4px 10px; } #engSub small { font-size:11px; } }
+@media (max-height:500px) { #engSub { font-size:13px; bottom:calc(4px + env(safe-area-inset-bottom)); max-width:52vw; padding:3px 10px; } #engSub small { font-size:11px; } }
 `;
 let enabled = true, voice = null, sub = null, hideT = 0, store = null;
 const queue = [], lastSaid = new Map();

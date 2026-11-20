@@ -20,6 +20,7 @@ export const HELIPADS = [...HELI_SPOTS.map(x => [x + DX, 60 + DZ]), [55 - 16, -1
 
 // 呢個位置可唔可以升降？
 export function canLand(x, z, heli = false, y = 0) {
+  if (heli) return true;   // 直升機：喺邊度都可以降落（地面、天台、草地都得）
   for (const p of HELIPADS) if (heli && Math.hypot(x - p[0], z - p[1]) < 9 && Math.abs(y - (p[2] || 0)) < 3) return true;
   if (y > 2) return false;
   for (const r of PAVED) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return true;
