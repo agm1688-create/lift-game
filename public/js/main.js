@@ -318,6 +318,9 @@ function startGame(myName, role = 'player', memberToken = '') {
   }
   function acctShow(a, timeup) {
     if (!a) return; acctNow = a; acctAt = performance.now(); if (a.quiz) quiz.config(a.quiz);
+    const wasEx = api.noQuiz; api.noQuiz = a.role === 'noquiz' || a.role === 'admin';   // 角色：免小測
+    if (api.noQuiz && !wasEx) { if (quiz.active()) quiz.close(); if (school.active()) school.finish(true); if (acctShow._seen) toast(a.role === 'admin' ? '👑 你而家係管理員：免小測、唔扣時間' : '⭐ 你而家免小測', 3500); }
+    acctShow._seen = true;
     acctHint.style.display = 'block';
     if (timeup) { if (!timeLocked) { sfx.error(); say('Your play time is finished. Time to take a break!', '遊戲時間用完喇，休息吓啦！'); } acctLock('遊戲時間用完喇', true); }
     else if (timeLocked) { timeLocked = false; lockEl.style.display = 'none'; sfx.ding?.(); toast('⏳ 加咗時間，可以繼續玩！', 3000); }
@@ -1824,9 +1827,9 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
     if (timeLocked || school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
-    if (!api.admin) quiz.update(dt, timeLocked || school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
-    if (hudT === 0 && acctNow) { const left = Math.max(0, acctNow.timeLeft - (timeLocked ? 0 : (performance.now() - acctAt) / 1000)); acctHint.textContent = `⏳ 剩 ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}（時間幣 ${acctNow.timeCoins}）｜🪙 金幣 ${acctNow.gold}`; }
-    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin ? '📝 管理員：免小測' : quiz.active() ? `📝 ${quiz.subjectName()}小測中` : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後${quiz.subjectName()}小測`; }
+    if (!(api.admin || api.noQuiz)) quiz.update(dt, timeLocked || school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
+    if (hudT === 0 && acctNow) { const left = Math.max(0, acctNow.timeLeft - (timeLocked ? 0 : (performance.now() - acctAt) / 1000)); acctHint.textContent = acctNow.unlimited ? `👑 管理員：無限時間｜🪙 金幣 ${acctNow.gold}` : `⏳ 剩 ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}（時間幣 ${acctNow.timeCoins}）｜🪙 金幣 ${acctNow.gold}`; }
+    if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin || api.noQuiz ? (api.noQuiz && !api.admin && acctNow?.role === 'noquiz' ? '📝 ⭐ 免小測' : '📝 管理員：免小測') : quiz.active() ? `📝 ${quiz.subjectName()}小測中` : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後${quiz.subjectName()}小測`; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     campers.update(T);

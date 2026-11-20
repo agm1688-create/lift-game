@@ -174,7 +174,7 @@ export function buildSchool(scene, api) {
       hint.textContent = `📚 上緊數學堂（答啱 ${S.lesson.correct}/${NEED}）`;
       return;
     }
-    if (api.admin) { hint.textContent = '📚 管理員：免上堂'; return; }
+    if (api.admin || api.noQuiz) { hint.textContent = api.admin ? '📚 管理員：免上堂' : '📚 免上堂'; return; }
     if (api.blocked && api.blocked()) { hint.textContent = ''; return; }
     S.played += dt;
     const rem = PLAY_SEC - S.played;

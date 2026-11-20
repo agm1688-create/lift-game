@@ -111,5 +111,5 @@ export function buildQuiz(api) {
     if (old !== JSON.stringify(cfg) && S.mode && S.q) render('');
   }
   const left = () => Math.max(0, every() - S.played);
-  return { update, resume, active: () => !!S.mode, open, left, config, cfg: () => cfg, state: S, subjectName: () => cfg.subject === 'math' ? '數學' : cfg.subject === 'mix' ? '英文 / 數學' : '英文' };
+  return { update, resume, close, active: () => !!S.mode, open, left, config, cfg: () => cfg, state: S, subjectName: () => cfg.subject === 'math' ? '數學' : cfg.subject === 'mix' ? '英文 / 數學' : '英文' };
 }

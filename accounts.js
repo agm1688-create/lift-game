@@ -50,7 +50,11 @@ const coinSec = () => Math.max(1, Number(S.settings.minPerCoin) || 10) * 60;
 const timeLeft = m => Math.max(0, Math.round((m.creditSec || 0) + (m.timeCoins || 0) * coinSec()));
 const byId = id => S.members.find(m => m.id === id);
 const byName = name => S.members.find(m => m.name.toLowerCase() === String(name).trim().toLowerCase());
-const acct = m => ({ name: m.name, timeCoins: m.timeCoins, gold: m.gold, timeLeft: timeLeft(m), minPerCoin: S.settings.minPerCoin, goldPerTimeCoin: S.settings.goldPerTimeCoin, quiz: quizOf(m) });
+// 會員角色：player = 普通玩家；noquiz = 免小測；admin = 管理員（免小測 + 唔扣時間幣）
+const ROLES = ['player', 'noquiz', 'admin'];
+const roleOf = m => ROLES.includes(m.role) ? m.role : 'player';
+const unlimited = m => roleOf(m) === 'admin';
+const acct = m => ({ name: m.name, role: roleOf(m), unlimited: unlimited(m), timeCoins: m.timeCoins, gold: m.gold, timeLeft: unlimited(m) ? 999999 : timeLeft(m), minPerCoin: S.settings.minPerCoin, goldPerTimeCoin: S.settings.goldPerTimeCoin, quiz: quizOf(m) });
 
 // 登入失敗太多次就暫停（每個 IP）
 const fails = new Map();
@@ -121,6 +125,7 @@ function startSession(token, ip) {
 // 玩咗 sec 秒：扣時間（用完一個時間幣就開下一個），返回 acct；冇時間就 timeup
 function tick(link, sec) {
   const { m, s } = link; if (!byId(m.id)) return { gone: true };
+  if (unlimited(m)) { m.totalSec = (m.totalSec || 0) + sec; s.sec += sec; s.end = Date.now(); touch(); return { acct: acct(m), timeup: false }; }
   if (timeLeft(m) <= 0) return { acct: acct(m), timeup: true };
   m.creditSec = (m.creditSec || 0) - sec;
   while (m.creditSec <= 0 && (m.timeCoins || 0) > 0) { m.timeCoins--; m.creditSec += coinSec(); }
@@ -152,7 +157,7 @@ const isAdmin = t => { const e = adminTokens.get(t); return !!e && e > Date.now(
 function adminState(onlineIds) {
   return {
     storage: storage(), settings: S.settings, now: Date.now(),
-    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m) })),
+    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m) })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
     helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
@@ -193,6 +198,7 @@ function adminAction(a) {
   else if (a.op === 'gold') m.gold = Math.max(0, (m.gold || 0) + num(a.n));
   else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
   else if (a.op === 'logoutAll') m.token = null;
+  else if (a.op === 'role') { if (!ROLES.includes(a.role)) return { err: '唔識呢個角色' }; m.role = a.role; }
   else if (a.op === 'quiz') {
     const q = a.quiz || {};
     m.quiz = {

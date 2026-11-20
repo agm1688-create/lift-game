@@ -97,7 +97,7 @@
     <section class="card">
       <h2>👥 會員</h2>
       <div class="tbl"><table>
-        <thead><tr><th>會員</th><th>時間幣</th><th>剩餘時間</th><th>金幣</th><th>總遊戲時間</th><th>最後登入</th><th>IP 地址</th><th>操作</th></tr></thead>
+        <thead><tr><th>會員</th><th>角色</th><th>時間幣</th><th>剩餘時間</th><th>金幣</th><th>總遊戲時間</th><th>最後登入</th><th>IP 地址</th><th>操作</th></tr></thead>
         <tbody id="mBody"></tbody>
       </table></div>
       <div class="msg" id="mMsg"></div>
@@ -160,13 +160,14 @@ async function refresh(first) {
   if (first || ![$('sMin'), $('sQuiz'), $('sEx'), $('sApC')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; $('sApC').value = data.settings.applyCoins; $('sApO').checked = !!data.settings.applyOpen; }
   $('mBody').innerHTML = data.members.length ? data.members.map(m => `<tr>
     <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><b>${esc(m.name)}</b></td>
+    <td><select data-role="${m.id}">${[['player', '👦 普通玩家'], ['noquiz', '⭐ 免小測'], ['admin', '👑 管理員']].map(([k, t]) => `<option value="${k}"${m.role === k ? ' selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
     <td class="num">${fmtD(m.timeLeft)}</td>
     <td class="num">${m.gold} <button class="s" data-op="gold" data-n="10" data-id="${m.id}">+10</button> <button class="s" data-op="gold" data-n="-10" data-id="${m.id}">−10</button></td>
     <td class="num">${fmtD(m.totalSec)}</td>
     <td>${fmtT(m.lastLogin)}</td>
     <td class="num">${esc(m.lastIp) || '—'}</td>
-    <td><button class="s" data-op="pin" data-id="${m.id}">改密碼</button> <button class="s" data-op="logoutAll" data-id="${m.id}" title="部機唔見咗嗰陣用：所有機要重新輸入密碼">登出所有機</button> <button class="s d" data-op="delete" data-id="${m.id}">刪除</button></td></tr>`).join('') : '<tr><td colspan="8" class="sub">未有會員，喺上面開一個。</td></tr>';
+    <td><button class="s" data-op="pin" data-id="${m.id}">改密碼</button> <button class="s" data-op="logoutAll" data-id="${m.id}" title="部機唔見咗嗰陣用：所有機要重新輸入密碼">登出所有機</button> <button class="s d" data-op="delete" data-id="${m.id}">刪除</button></td></tr>`).join('') : '<tr><td colspan="9" class="sub">未有會員，喺上面開一個。</td></tr>';
   renderQuiz(first);
   renderSessions();
 }
@@ -217,6 +218,11 @@ $('hBody').onclick = async e => {
 };
 $('aBody').onclick = e => { const b = e.target.closest('button[data-ap]'); if (!b) return; const a = data.apps.find(x => x.id === +b.dataset.id); if (b.dataset.ap === 'reject' && !confirm(`拒絕「${a.name}」嘅申請？`)) return; act({ op: b.dataset.ap, id: a.id }, $('aMsg')); };
 $('btnNew').onclick = async () => { const r = await act({ op: 'create', name: $('nName').value, pin: $('nPin').value, timeCoins: $('nCoins').value, gold: $('nGold').value }, $('newMsg')); if (r.ok) { $('nName').value = ''; $('nPin').value = ''; } };
+$('mBody').onchange = e => {
+  const sel = e.target.closest('select[data-role]'); if (!sel) return;
+  const m = data.members.find(x => x.id === +sel.dataset.role);
+  act({ op: 'role', id: m.id, role: sel.value }, $('mMsg')).then(r => { if (r.ok) msg($('mMsg'), `「${m.name}」而家係 ${sel.selectedOptions[0].textContent}（喺線嘅話即刻生效）`, true); });
+};
 $('mBody').onclick = async e => {
   const b = e.target.closest('button[data-op]'); if (!b) return;
   const id = +b.dataset.id, m = data.members.find(x => x.id === id), op = b.dataset.op;
