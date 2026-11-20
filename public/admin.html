@@ -138,14 +138,14 @@ async function call(path, body) {
 function msg(el, text, ok) { el.textContent = text || ''; el.className = 'msg ' + (ok ? 'ok' : 'err'); if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000); }
 function logout() { token = ''; sessionStorage.removeItem('adminTok'); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
 async function login() {
-  const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pw: $('pw').value }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器' }));
+  const r = await fetch('api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pw: $('pw').value }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器' }));
   if (!r.ok) return msg($('loginMsg'), r.err);
   token = r.token; sessionStorage.setItem('adminTok', token); $('pw').value = ''; show();
 }
 async function show() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); await refresh(true); }
 async function refresh(first) {
   if (!token) return;
-  try { data = await call('/api/admin/state'); } catch { return; }
+  try { data = await call('api/admin/state'); } catch { return; }
   if (data.err) return;
   $('storeWarn').classList.toggle('hidden', data.storage === 'database');
   const on = data.members.filter(m => m.online).length;
@@ -159,7 +159,7 @@ async function refresh(first) {
   $('status').textContent = `${data.members.length} 個會員｜${data.apps.length} 個申請｜${on} 個喺線｜儲存：${data.storage === 'database' ? '資料庫' : '暫存'}`;
   if (first || ![$('sMin'), $('sQuiz'), $('sEx'), $('sApC')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; $('sApC').value = data.settings.applyCoins; $('sApO').checked = !!data.settings.applyOpen; }
   $('mBody').innerHTML = data.members.length ? data.members.map(m => `<tr>
-    <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><b>${esc(m.name)}</b></td>
+    <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><b>${esc(m.name)}</b>${m.pg ? ' <span class="sub" title="28 遊樂場帳戶：金幣同大廳共用">🎮28</span>' : ''}</td>
     <td><select data-role="${m.id}">${[['player', '👦 普通玩家'], ['noquiz', '⭐ 免小測'], ['admin', '👑 管理員']].map(([k, t]) => `<option value="${k}"${m.role === k ? ' selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
     <td class="num">${fmtD(m.timeLeft)}</td>
@@ -203,7 +203,7 @@ function renderSessions() {
   const list = data.sessions.filter(s => !f || s.name.toLowerCase().includes(f));
   $('sBody').innerHTML = list.length ? list.map(s => `<tr><td>${esc(s.name)}</td><td>${fmtT(s.start)}</td><td>${fmtT(s.end)}</td><td class="num">${fmtD(s.sec)}</td><td class="num">${esc(s.ip)}</td></tr>`).join('') : '<tr><td colspan="5" class="sub">未有紀錄</td></tr>';
 }
-async function act(body, el) { const r = await call('/api/admin/action', body); msg(el, r.err || '已更新', !r.err); await refresh(); return r; }
+async function act(body, el) { const r = await call('api/admin/action', body); msg(el, r.err || '已更新', !r.err); await refresh(); return r; }
 $('btnLogin').onclick = login; $('pw').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('btnOut').onclick = logout;
 $('fName').oninput = renderSessions;

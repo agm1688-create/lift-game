@@ -45,7 +45,7 @@ export function askLogin(api, name, onOk) {
     if (k === 'back') return close();
     if (k === 'forgot') {
       if (busy) return; busy = true; render('⏳ 通知緊管理員…');
-      return fetch('/api/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+      return fetch('api/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
         .then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }))
         .then(r => { busy = false; render(r.ok ? '<span style="color:#a5d6a7">✅ 已經通知管理員！請搵管理員幫你設新密碼。</span>' : '❌ ' + r.err); });
     }
@@ -53,7 +53,7 @@ export function askLogin(api, name, onOk) {
     if (k === 'del') { input = input.slice(0, -1); return render(); }
     if (k !== 'ok' || busy) return;
     busy = true; render('⏳ 登入緊…');
-    fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin: input }) })
+    fetch('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin: input }) })
       .then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }))
       .then(r => {
         busy = false;

@@ -25,11 +25,12 @@ async function api(req, res, p) {
   if (p === '/api/apply') return json(res, 200, ACC.apply(b.name, b.pin, ip));
   if (p === '/api/resume') return json(res, 200, ACC.resume(b.token, ip));
   if (p === '/api/forgot') return json(res, 200, ACC.forgot(b.name, ip));
+  if (p === '/api/sso') return json(res, 200, await ACC.ssoLogin(b.token, !!b.peek, ip));
   if (p === '/api/admin/login') return json(res, 200, ACC.adminLogin(b.pw, ip));
   if (!ACC.isAdmin(req.headers['x-admin'])) return json(res, 401, { err: '請重新登入管理員' });
   if (p === '/api/admin/state') { const on = new Set(); for (const [, pl] of players) if (pl.link) on.add(pl.link.m.id); return json(res, 200, ACC.adminState(on)); }
   if (p === '/api/admin/action') {
-    const r = ACC.adminAction(b);
+    const r = await ACC.adminAction(b);
     // 即時通知喺線嘅會員（例如加咗時間幣）
     if (r.ok) for (const [, pl] of players) if (pl.link) { const a = ACC.acctOf(pl.link); if (a) send(pl.ws, { t: 'acct', acct: a, timeup: a.timeLeft <= 0 }); else { send(pl.ws, { t: 'kicked' }); pl.link = null; } }
     return json(res, 200, r);
@@ -163,8 +164,8 @@ wss.on('connection', (ws, req) => {
       case 'st': if (me) me.st = m.s; break;
       case 'ping': send(ws, { t: 'pong', c: m.c, now }); break;
       case 'beat': if (me) me.beat = now; break;
-      case 'quizOK': if (me && me.link) { const a = ACC.quizOK(me.link); if (a) send(ws, { t: 'acct', acct: a }); } break;
-      case 'exchange': if (me && me.link) { const r = ACC.exchange(me.link); send(ws, r.err ? { t: 'acctErr', err: r.err } : { t: 'acct', acct: r.acct, timeup: r.acct.timeLeft <= 0 }); } break;
+      case 'quizOK': if (me && me.link) ACC.quizOK(me.link).then(a => { if (a) send(ws, { t: 'acct', acct: a }); }); break;
+      case 'exchange': if (me && me.link) ACC.exchange(me.link).then(r => send(ws, r.err ? { t: 'acctErr', err: r.err } : { t: 'acct', acct: r.acct, timeup: r.acct.timeLeft <= 0 })); break;
       case 'lift': {
         const L = lifts[m.id]; if (!L || !me) break;
         liftCmd(L, m, now); broadcastLifts(); break;
@@ -199,11 +200,12 @@ setInterval(() => {
 }, 100);
 
 // 會員遊戲時間：每 15 秒計一次（個 App 要喺前面、15 秒內有心跳先計）
-const TICK = 15;
+const TICK = 15; let tickN = 0;
 setInterval(() => {
-  const now = Date.now();
+  const now = Date.now(); tickN++;
   for (const [, p] of players) {
     if (!p.link || now - p.beat > 40000) continue;
+    if (tickN % 4 === 0) ACC.syncGold(p.link.m);   // 28 遊樂場金幣（大廳買嘢會變）每分鐘對一次
     const r = ACC.tick(p.link, TICK);
     if (r.gone) { send(p.ws, { t: 'kicked' }); p.link = null; continue; }
     send(p.ws, { t: 'acct', acct: r.acct, timeup: r.timeup });

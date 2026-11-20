@@ -7,6 +7,17 @@ const crypto = require('crypto');
 const ADMIN_PW = process.env.ADMIN_PASSWORD || '8844';
 const FILE = path.join(__dirname, 'data', 'accounts.json');
 const MAX_SESSIONS = 3000;
+// 28 遊樂場接駁：同一部機上面嘅大廳伺服器（例如 http://127.0.0.1:3000），帳戶同金幣共用
+const PG_URL = (process.env.PLAYGROUND_URL || '').replace(/\/$/, '');
+let PG_KEY = process.env.PLAYGROUND_KEY || '';
+if (PG_URL && !PG_KEY && process.env.PLAYGROUND_KEY_FILE) { try { PG_KEY = fs.readFileSync(process.env.PLAYGROUND_KEY_FILE, 'utf8').trim(); } catch (e) { console.error('讀唔到 28 遊樂場鎖匙', e.message); } }
+async function pgCall(p, body) {
+  if (!PG_URL) return { ok: false, error: '未接駁 28 遊樂場' };
+  try {
+    const r = await fetch(PG_URL + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Ext-Key': PG_KEY }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: '連唔到 28 遊樂場' }; }
+}
 
 // 每位會員嘅小測設定：程度 1–6、地區 HK / TW、每隔幾多分鐘、科目 en / math / mix、要連續答啱幾多條、有冇提示
 const DEF_QUIZ = { level: 2, region: 'HK', every: 3, subject: 'en', need: 2, tips: 1 };
@@ -134,14 +145,45 @@ function tick(link, sec) {
   return { acct: acct(m), timeup: timeLeft(m) <= 0 };
 }
 function endSession(link) { if (!link) return; link.s.end = Date.now(); touch(); }
-function quizOK(link) { const m = link && byId(link.m.id); if (!m) return null; m.gold = (m.gold || 0) + (Number(S.settings.goldPerQuiz) || 0); touch(); return acct(m); }
-function exchange(link) {
+// 金幣：28 遊樂場帳戶就加減大廳嘅金幣，否則用自己嘅
+async function goldAdd(m, d) {
+  if (m.pg) {
+    const r = await pgCall('/api/ext/coins', { id: m.pg, delta: d });
+    if (typeof r.coins === 'number') { m.gold = r.coins; touch(); }
+    return r.ok ? { ok: true } : { ok: false, err: r.error || '金幣唔夠' };
+  }
+  if (d < 0 && (m.gold || 0) + d < 0) return { ok: false, err: '金幣唔夠' };
+  m.gold = Math.max(0, (m.gold || 0) + d); touch(); return { ok: true };
+}
+async function syncGold(m) { if (m && m.pg) await goldAdd(m, 0); }
+async function quizOK(link) { const m = link && byId(link.m.id); if (!m) return null; const n = Number(S.settings.goldPerQuiz) || 0; if (n) await goldAdd(m, n); return acct(m); }
+async function exchange(link) {
   const m = link && byId(link.m.id); if (!m) return { err: '冇帳戶' };
   const cost = Number(S.settings.goldPerTimeCoin) || 0;
   if (cost <= 0) return { err: '管理員未開放金幣換時間幣' };
+  await syncGold(m);
   if ((m.gold || 0) < cost) return { err: `唔夠金幣（要 ${cost} 個）` };
-  m.gold -= cost; m.timeCoins = (m.timeCoins || 0) + 1; touch();
+  const r = await goldAdd(m, -cost); if (!r.ok) return { err: r.err };
+  m.timeCoins = (m.timeCoins || 0) + 1; touch();
   return { acct: acct(m) };
+}
+// ---------- 28 遊樂場帳戶登入 ----------
+async function ssoLogin(token, peek, ip) {
+  if (!PG_URL) return { ok: false, err: '未接駁 28 遊樂場' };
+  if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
+  const u = await pgCall('/api/ext/verify', { token: String(token || '') });
+  if (!u.ok) { fail(ip); return { ok: false, err: '28 遊樂場登入已過期，請返大廳再登入' }; }
+  let m = S.members.find(x => x.pg === u.id);
+  if (peek) return { ok: true, name: m ? m.name : u.username };
+  if (!m) {
+    // 第一次：自動開一個搭 Lift 帳戶連住 28 遊樂場帳戶（同名有人用就加 _28）
+    let name = u.username; for (let k = 2; byName(name); k++) name = `${u.username}_${k === 2 ? '28' : k}`;
+    m = { id: S.nextId++, name, pg: u.id, pin: null, role: 'player', timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: u.coins, totalSec: 0, created: Date.now(), createdIp: ip };
+    S.members.push(m);
+  }
+  m.gold = u.coins; if (!m.token) m.token = crypto.randomBytes(16).toString('hex');
+  touch();
+  return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 const acctOf = link => { const m = link && byId(link.m.id); return m ? acct(m) : null; };
 
@@ -157,7 +199,7 @@ const isAdmin = t => { const e = adminTokens.get(t); return !!e && e > Date.now(
 function adminState(onlineIds) {
   return {
     storage: storage(), settings: S.settings, now: Date.now(),
-    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m) })),
+    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m), pg: !!m.pg })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
     helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
@@ -195,7 +237,7 @@ function adminAction(a) {
   }
   const m = byId(Number(a.id)); if (!m) return { err: '搵唔到會員' };
   if (a.op === 'coins') { m.timeCoins = Math.max(0, (m.timeCoins || 0) + num(a.n)); }
-  else if (a.op === 'gold') m.gold = Math.max(0, (m.gold || 0) + num(a.n));
+  else if (a.op === 'gold') return goldAdd(m, num(a.n)).then(r => r.ok ? { ok: true, changed: m.id } : { err: r.err });
   else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
   else if (a.op === 'logoutAll') m.token = null;
   else if (a.op === 'role') { if (!ROLES.includes(a.role)) return { err: '唔識呢個角色' }; m.role = a.role; }
@@ -215,4 +257,4 @@ function adminAction(a) {
   touch(); return { ok: true, changed: m.id };
 }
 
-module.exports = { load, flush, apply, login, resume, forgot, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
+module.exports = { load, flush, apply, login, resume, forgot, ssoLogin, syncGold, pgEnabled: () => !!PG_URL, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
