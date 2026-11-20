@@ -125,6 +125,41 @@ optRow($('optHair'), HAIRS.map(v => ({ v })), 'hair', (b, it) => { b.className =
 optRow($('optPants'), PANTS.map(v => ({ v })), 'pants', (b, it) => { b.className = 'sw'; b.style.background = it.v; });
 rebuildPreview();
 
+// ---------- 申請做會員 ----------
+$('applyBtn').onclick = () => {
+  let el = document.getElementById('applyModal');
+  if (!el) { el = document.createElement('div'); el.id = 'applyModal'; document.body.appendChild(el); }
+  el.style.cssText = 'position:fixed;inset:0;z-index:96;background:rgba(6,10,26,.92);display:flex;align-items:center;justify-content:center;padding:12px;font-family:system-ui,sans-serif;color:#fff';
+  const inp = 'width:100%;box-sizing:border-box;padding:10px 12px;font-size:18px;border-radius:10px;border:2px solid #90caf9;background:#0008;color:#fff;margin:4px 0 10px';
+  el.innerHTML = `<div style="width:min(380px,94vw);max-height:96dvh;overflow-y:auto;background:#16263d;border:2px solid #ffd864;border-radius:16px;padding:16px">
+    <h2 style="margin:0 0 6px;color:#ffe082;font-size:22px">📝 申請做會員</h2>
+    <div style="font-size:14px;opacity:.85;margin-bottom:10px">填好之後等管理員批准，批准咗就可以用呢個會員名同密碼登入。</div>
+    <label style="font-size:14px">會員名（中文 / 英文 / 數字，最多 10 個字）</label>
+    <input id="apName" maxlength="10" style="${inp}" value="${($('name').value || '').replace(/[^㐀-鿿A-Za-z0-9]/g, '').slice(0, 10)}">
+    <label style="font-size:14px">密碼（4 個數字）</label>
+    <input id="apPin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" style="${inp};letter-spacing:8px">
+    <label style="font-size:14px">再輸入一次密碼</label>
+    <input id="apPin2" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" style="${inp};letter-spacing:8px">
+    <div id="apMsg" style="min-height:22px;font-weight:700;color:#ff8a80;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px"><button id="apOk" style="flex:1;padding:12px;border:0;border-radius:12px;background:#43a047;color:#fff;font-size:18px;font-weight:700;cursor:pointer">送出申請</button>
+    <button id="apX" style="padding:12px 16px;border:1px solid #fff6;border-radius:12px;background:none;color:#fff;font-size:16px;cursor:pointer">取消</button></div></div>`;
+  const msg = (t, ok) => { const m = el.querySelector('#apMsg'); m.textContent = t; m.style.color = ok ? '#a5d6a7' : '#ff8a80'; };
+  el.querySelector('#apX').onclick = () => { el.style.display = 'none'; };
+  el.querySelectorAll('#apPin,#apPin2').forEach(i => i.oninput = () => { i.value = i.value.replace(/\D/g, '').slice(0, 4); });
+  el.querySelector('#apOk').onclick = async () => {
+    const name = el.querySelector('#apName').value.trim(), pin = el.querySelector('#apPin').value, pin2 = el.querySelector('#apPin2').value;
+    if (!/^[㐀-鿿A-Za-z0-9]{1,10}$/.test(name)) return msg('會員名只可以用中文、英文字母同數字，最多 10 個字');
+    if (!/^\d{4}$/.test(pin)) return msg('密碼要啱啱好 4 個數字');
+    if (pin !== pin2) return msg('兩次輸入嘅密碼唔一樣');
+    msg('⏳ 送出緊…', true);
+    const r = await fetch('/api/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }));
+    if (!r.ok) return msg('❌ ' + (r.err || '申請唔成功'));
+    $('name').value = name;
+    el.querySelector('div').innerHTML = `<h2 style="margin:0 0 8px;color:#a5d6a7">✅ 申請已經送出</h2><div style="font-size:16px;line-height:1.6">會員名：<b>${name}</b><br>請記住你嘅 4 位數字密碼。<br>等管理員批准之後，喺開始畫面輸入會員名，撳「開始玩」再輸入密碼就得。</div><button id="apDone" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:12px;background:#1e88e5;color:#fff;font-size:18px;cursor:pointer">知道</button>`;
+    el.querySelector('#apDone').onclick = () => { el.style.display = 'none'; };
+  };
+  el.querySelector('#apName').focus();
+};
 $('go').onclick = () => {
   const name = ($('name').value.trim() || '玩家' + Math.floor(Math.random() * 1000)).slice(0, 16);
   store.set('look', look); store.set('name', name);

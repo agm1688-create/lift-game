@@ -50,12 +50,23 @@
   <main>
     <div class="warn hidden" id="storeWarn">⚠️ 未連接資料庫：而家資料只係暫存喺伺服器，每次 deploy 或者伺服器重開都會清晒。請喺 Render 設定 DATABASE_URL。</div>
 
+    <section class="card" id="appCard">
+      <h2>📝 待批申請 <span class="sub" id="appCount"></span></h2>
+      <div class="tbl"><table>
+        <thead><tr><th>申請會員名</th><th>申請時間</th><th>IP 地址</th><th>操作</th></tr></thead>
+        <tbody id="aBody"></tbody>
+      </table></div>
+      <div class="msg" id="aMsg"></div>
+    </section>
+
     <section class="card">
       <h2>⚙️ 設定</h2>
       <div class="row">
         <label>每 1 個時間幣可以玩（分鐘）<input id="sMin" type="number" min="1" max="600"></label>
         <label>每答啱 1 條小測得（金幣）<input id="sQuiz" type="number" min="0"></label>
         <label>幾多金幣換 1 個時間幣（0 = 唔准換）<input id="sEx" type="number" min="0"></label>
+        <label>批准申請時送幾多時間幣<input id="sApC" type="number" min="0"></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input id="sApO" type="checkbox" style="width:auto"> 接受新會員申請</label>
         <button class="p" id="btnSet">儲存設定</button>
       </div>
       <div class="msg" id="setMsg"></div>
@@ -64,7 +75,7 @@
     <section class="card">
       <h2>➕ 開新會員</h2>
       <div class="row">
-        <label>會員名（遊戲入面輸入嘅名）<input id="nName" maxlength="16"></label>
+        <label>會員名（中文 / 英文 / 數字，最多 10 個字）<input id="nName" maxlength="10"></label>
         <label>密碼（4–8 個數字）<input id="nPin" inputmode="numeric" maxlength="8"></label>
         <label>時間幣<input id="nCoins" type="number" min="0" value="6"></label>
         <label>金幣<input id="nGold" type="number" min="0" value="0"></label>
@@ -119,8 +130,11 @@ async function refresh(first) {
   if (data.err) return;
   $('storeWarn').classList.toggle('hidden', data.storage === 'database');
   const on = data.members.filter(m => m.online).length;
-  $('status').textContent = `${data.members.length} 個會員｜${on} 個喺線｜儲存：${data.storage === 'database' ? '資料庫' : '暫存'}`;
-  if (first || ![$('sMin'), $('sQuiz'), $('sEx')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; }
+  $('appCount').textContent = data.apps.length ? `（${data.apps.length} 個等緊）` : '';
+  $('aBody').innerHTML = data.apps.length ? data.apps.map(a => `<tr><td><b>${esc(a.name)}</b></td><td>${fmtT(a.at)}</td><td class="num">${esc(a.ip)}</td><td><button class="s p" data-ap="approve" data-id="${a.id}">✔ 批准</button> <button class="s d" data-ap="reject" data-id="${a.id}">✖ 拒絕</button></td></tr>`).join('') : '<tr><td colspan="4" class="sub">冇新申請</td></tr>';
+  document.title = data.apps.length ? `(${data.apps.length}) 會員管理` : '會員管理';
+  $('status').textContent = `${data.members.length} 個會員｜${data.apps.length} 個申請｜${on} 個喺線｜儲存：${data.storage === 'database' ? '資料庫' : '暫存'}`;
+  if (first || ![$('sMin'), $('sQuiz'), $('sEx'), $('sApC')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; $('sApC').value = data.settings.applyCoins; $('sApO').checked = !!data.settings.applyOpen; }
   $('mBody').innerHTML = data.members.length ? data.members.map(m => `<tr>
     <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><b>${esc(m.name)}</b></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
@@ -142,7 +156,8 @@ async function act(body, el) { const r = await call('/api/admin/action', body); 
 $('btnLogin').onclick = login; $('pw').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('btnOut').onclick = logout;
 $('fName').oninput = renderSessions;
-$('btnSet').onclick = () => act({ op: 'settings', minPerCoin: $('sMin').value, goldPerQuiz: $('sQuiz').value, goldPerTimeCoin: $('sEx').value }, $('setMsg'));
+$('btnSet').onclick = () => act({ op: 'settings', minPerCoin: $('sMin').value, goldPerQuiz: $('sQuiz').value, goldPerTimeCoin: $('sEx').value, applyCoins: $('sApC').value, applyOpen: $('sApO').checked }, $('setMsg'));
+$('aBody').onclick = e => { const b = e.target.closest('button[data-ap]'); if (!b) return; const a = data.apps.find(x => x.id === +b.dataset.id); if (b.dataset.ap === 'reject' && !confirm(`拒絕「${a.name}」嘅申請？`)) return; act({ op: b.dataset.ap, id: a.id }, $('aMsg')); };
 $('btnNew').onclick = async () => { const r = await act({ op: 'create', name: $('nName').value, pin: $('nPin').value, timeCoins: $('nCoins').value, gold: $('nGold').value }, $('newMsg')); if (r.ok) { $('nName').value = ''; $('nPin').value = ''; } };
 $('mBody').onclick = async e => {
   const b = e.target.closest('button[data-op]'); if (!b) return;

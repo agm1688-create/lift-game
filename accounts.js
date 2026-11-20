@@ -8,7 +8,8 @@ const ADMIN_PW = process.env.ADMIN_PASSWORD || '8844';
 const FILE = path.join(__dirname, 'data', 'accounts.json');
 const MAX_SESSIONS = 3000;
 
-let S = { settings: { minPerCoin: 10, goldPerQuiz: 1, goldPerTimeCoin: 10 }, members: [], sessions: [], nextId: 1, nextSid: 1 };
+const DEF = { minPerCoin: 10, goldPerQuiz: 1, goldPerTimeCoin: 10, applyCoins: 3, applyOpen: 1 };
+let S = { settings: { ...DEF }, members: [], sessions: [], apps: [], nextId: 1, nextSid: 1, nextAid: 1 };
 let pool = null, dirty = false;
 const storage = () => (pool ? 'database' : 'file');
 
@@ -23,7 +24,7 @@ async function load() {
   } else if (fs.existsSync(FILE)) {
     try { S = Object.assign(S, JSON.parse(fs.readFileSync(FILE, 'utf8'))); } catch (e) { console.error('accounts.json 讀唔到', e); }
   }
-  S.settings = Object.assign({ minPerCoin: 10, goldPerQuiz: 1, goldPerTimeCoin: 10 }, S.settings);
+  S.settings = Object.assign({ ...DEF }, S.settings); S.apps = S.apps || []; S.nextAid = S.nextAid || 1;
   console.log(`會員系統：${S.members.length} 個會員（儲存：${storage()}）`);
 }
 async function flush() {
@@ -51,12 +52,33 @@ const fails = new Map();
 const blocked = ip => { const f = fails.get(ip); return f && f.n >= 6 && Date.now() - f.t < 60000; };
 const fail = ip => { const f = fails.get(ip) || { n: 0, t: 0 }; if (Date.now() - f.t > 60000) f.n = 0; f.n++; f.t = Date.now(); fails.set(ip, f); };
 
+// 會員名：中文、英文字母、數字，最多 10 個字
+const NAME_RE = /^[㐀-鿿A-Za-z0-9]{1,10}$/;
+const nameOK = n => NAME_RE.test(n);
+const NAME_ERR = '會員名只可以用中文、英文字母同數字，最多 10 個字';
+
+// ---------- 申請做會員 ----------
+function apply(name, pin, ip) {
+  name = String(name || '').trim(); pin = String(pin || '');
+  if (!Number(S.settings.applyOpen)) return { ok: false, err: '暫時唔接受申請，請直接搵管理員' };
+  if (!nameOK(name)) return { ok: false, err: NAME_ERR };
+  if (!/^\d{4}$/.test(pin)) return { ok: false, err: '密碼要啱啱好 4 個數字' };
+  if (pin === ADMIN_PW) return { ok: false, err: '呢個密碼唔用得，請揀過第二個' };
+  if (byName(name)) return { ok: false, err: '呢個會員名已經有人用咗' };
+  if (S.apps.some(a => a.name.toLowerCase() === name.toLowerCase())) return { ok: false, err: '呢個會員名已經申請緊，等管理員批准' };
+  if (S.apps.filter(a => a.ip === ip).length >= 3) return { ok: false, err: '你已經申請咗好多個，等管理員處理先' };
+  if (S.apps.length >= 100) return { ok: false, err: '申請太多，請遲啲再試' };
+  S.apps.push({ id: S.nextAid++, name, pin: hashPin(pin), ip, at: Date.now() }); touch();
+  return { ok: true };
+}
+
 // ---------- 遊戲登入 ----------
 function login(name, pin, ip) {
   if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
   pin = String(pin || '');
   if (pin === ADMIN_PW) return { ok: true, role: 'admin' };
   const m = byName(name || '');
+  if (!m) { const a = S.apps.find(x => x.name.toLowerCase() === String(name || '').trim().toLowerCase()); if (a) return { ok: false, err: '你嘅申請仲未批准，請等管理員' }; }
   if (!m || !pinOK(pin, m.pin)) { fail(ip); return { ok: false, err: '冇呢個會員，或者密碼唔啱' }; }
   if (!m.token) { m.token = crypto.randomBytes(16).toString('hex'); touch(); }
   return { ok: true, role: 'member', token: m.token, acct: acct(m) };
@@ -108,14 +130,15 @@ function adminState(onlineIds) {
     storage: storage(), settings: S.settings, now: Date.now(),
     members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id) })),
     sessions: S.sessions.slice(-400).reverse(),
+    apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
   };
 }
 function adminAction(a) {
   const num = v => Math.round(Number(v) || 0);
   const pinRule = p => /^\d{4,8}$/.test(String(p)) && String(p) !== ADMIN_PW;
   if (a.op === 'create') {
-    const name = String(a.name || '').trim().slice(0, 16);
-    if (!name) return { err: '要有會員名' };
+    const name = String(a.name || '').trim();
+    if (!nameOK(name)) return { err: NAME_ERR };
     if (byName(name)) return { err: '已經有同名會員' };
     if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' };
     S.members.push({ id: S.nextId++, name, pin: hashPin(a.pin), timeCoins: Math.max(0, num(a.timeCoins)), creditSec: 0, gold: Math.max(0, num(a.gold)), totalSec: 0, created: Date.now() });
@@ -126,6 +149,17 @@ function adminAction(a) {
     s.minPerCoin = Math.min(600, Math.max(1, num(a.minPerCoin) || s.minPerCoin));
     s.goldPerQuiz = Math.min(1000, Math.max(0, num(a.goldPerQuiz)));
     s.goldPerTimeCoin = Math.min(100000, Math.max(0, num(a.goldPerTimeCoin)));
+    if (a.applyCoins != null) s.applyCoins = Math.min(1000, Math.max(0, num(a.applyCoins)));
+    if (a.applyOpen != null) s.applyOpen = a.applyOpen ? 1 : 0;
+    touch(); return { ok: true };
+  }
+  if (a.op === 'approve' || a.op === 'reject') {
+    const ap = S.apps.find(x => x.id === Number(a.id)); if (!ap) return { err: '搵唔到呢個申請' };
+    S.apps = S.apps.filter(x => x !== ap);
+    if (a.op === 'approve') {
+      if (byName(ap.name)) { touch(); return { err: '已經有同名會員，申請已刪除' }; }
+      S.members.push({ id: S.nextId++, name: ap.name, pin: ap.pin, timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: 0, totalSec: 0, created: Date.now(), lastIp: ap.ip });
+    }
     touch(); return { ok: true };
   }
   const m = byId(Number(a.id)); if (!m) return { err: '搵唔到會員' };
@@ -137,4 +171,4 @@ function adminAction(a) {
   touch(); return { ok: true, changed: m.id };
 }
 
-module.exports = { load, flush, login, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
+module.exports = { load, flush, apply, login, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
