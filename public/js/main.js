@@ -130,15 +130,15 @@ $('go').onclick = () => {
   store.set('look', look); store.set('name', name);
   initAudio(); unlockSpeech();
   if (isTouch) enterFullscreen(false);
-  askLogin({ store, sfx: { click: () => {} } }, role => {
+  askLogin({ store, sfx: { click: () => {} } }, name, (role, token) => {
     pv.run = false; pv.r.dispose();
     $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
-    startGame(name, role);
+    startGame(name, role, token);
   });
 };
 
 // ================= 遊戲 =================
-function startGame(myName, role = 'player') {
+function startGame(myName, role = 'player', memberToken = '') {
   const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: !isTouch, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
@@ -222,7 +222,7 @@ function startGame(myName, role = 'player') {
   api.reward = n => { E.cash = Math.round((E.cash + n) * 10) / 10; saveEcon(); };
   api.busy = () => !!(P.seat || P.flight || P.mech || P.transit || P.pass || P.boat || P.shuttle || P.cable || sky.riding() || mtr.riding());
   api.loadCity = () => city.loadAll(P.pos);
-  api.blocked = () => jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
+  api.blocked = () => timeLocked || jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
   const liftFix = buildLiftFix({ store, sfx, say });
   const quiz = buildQuiz({ store, sfx, say, onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
   if (role === 'admin') { quiz.state.mode = null; quiz.state.q = null; setTimeout(() => toast('🔑 管理員登入：唔使做小測', 3500), 800); }
@@ -247,6 +247,28 @@ function startGame(myName, role = 'player') {
   const learn = buildLearn({ say, sfx });
   scene.add(exhaustFanMesh(HOTEL.x - 8, 3.0, HOTEL.z - 1.84, '+z'));   // 酒店大堂抽氣扇
   { const aptMenu0 = apartments.liftMenu; apartments.liftMenu = (info, fromLobby) => liftFix.gate('apt:' + info.name, `${info.name} Lift`, () => aptMenu0(info, fromLobby)); }
+  // ===== 會員：剩餘遊戲時間 + 金幣 =====
+  const acctHint = document.createElement('div'); acctHint.style.cssText = 'position:absolute;left:calc(10px + env(safe-area-inset-left));bottom:calc(216px + env(safe-area-inset-bottom));background:rgba(0,0,0,.55);color:#ffe082;font-size:12px;font-weight:700;padding:3px 8px;border-radius:8px;pointer-events:none;display:none'; $('hud').appendChild(acctHint);
+  const lockEl = document.createElement('div'); lockEl.style.cssText = 'position:fixed;inset:0;z-index:95;background:radial-gradient(#3a2a5a,#0a0614);color:#fff;display:none;align-items:center;justify-content:center;text-align:center;font-family:system-ui,sans-serif;padding:16px'; document.body.appendChild(lockEl);
+  let acctNow = null, acctAt = 0, timeLocked = false;
+  function acctLock(text, canEx) {
+    timeLocked = true; lockEl.style.display = 'flex';
+    const a = acctNow, cost = a ? a.goldPerTimeCoin : 0;
+    lockEl.innerHTML = `<div style="max-width:380px"><div style="font-size:54px">⏳</div><h2 style="color:#ffe082;margin:6px 0">${text}</h2>
+      <div style="opacity:.9;margin-bottom:12px">🪙 你有 ${a ? a.gold : 0} 個金幣${cost > 0 ? `（${cost} 個金幣換 1 個時間幣 = ${a.minPerCoin} 分鐘）` : ''}</div>
+      ${canEx && cost > 0 ? `<button id="exBtn" style="padding:12px 20px;font-size:18px;border:0;border-radius:12px;background:${a.gold >= cost ? '#43a047' : '#78909c'};color:#fff;cursor:pointer">🪙 用 ${cost} 金幣換 1 個時間幣</button>` : ''}
+      <div style="margin-top:12px;font-size:14px;opacity:.8">答啱英文小測可以賺金幣；亦可以搵管理員加時間幣。</div></div>`;
+    const b = lockEl.querySelector('#exBtn'); if (b) b.onclick = () => { sfx.click(); net.send({ t: 'exchange' }); };
+  }
+  function acctShow(a, timeup) {
+    if (!a) return; acctNow = a; acctAt = performance.now();
+    acctHint.style.display = 'block';
+    if (timeup) { if (!timeLocked) { sfx.error(); say('Your play time is finished. Time to take a break!', '遊戲時間用完喇，休息吓啦！'); } acctLock('遊戲時間用完喇', true); }
+    else if (timeLocked) { timeLocked = false; lockEl.style.display = 'none'; sfx.ding?.(); toast('⏳ 加咗時間，可以繼續玩！', 3000); }
+    if (a.timeLeft > 0 && a.timeLeft <= 120 && !acctShow._warned) { acctShow._warned = true; toast('⏳ 仲有 2 分鐘遊戲時間', 3500); }
+    if (a.timeLeft > 120) acctShow._warned = false;
+  }
+  api.onQuizOK = () => { if (memberToken) net.send({ t: 'quizOK' }); };
   const quizHint = document.createElement('div'); quizHint.style.cssText = 'position:absolute;left:calc(10px + env(safe-area-inset-left));bottom:calc(172px + env(safe-area-inset-bottom));background:rgba(0,0,0,.45);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;pointer-events:none'; $('hud').appendChild(quizHint);
   const acDisplay = buildACDisplay();
   api.machineRoom = (name, backFn) => { leaveAll(); liftRoom.enter(name, backFn); };
@@ -817,6 +839,9 @@ function startGame(myName, role = 'player') {
 
   function onNet(m) {
     switch (m.t) {
+      case 'acct': acctShow(m.acct, m.timeup); break;
+      case 'acctErr': toast('⚠️ ' + m.err, 3500); sfx.error(); break;
+      case 'kicked': acctLock('🚫 你嘅會員帳戶已經停用，請搵管理員。', false); break;
       case 'welcome':
         m.lifts.forEach((s, i) => i < 2 ? lifts.lifts[i].state = s : hotel.setState(i - 2, s));
         setToiletLight(m.world.toiletLight);
@@ -832,7 +857,9 @@ function startGame(myName, role = 'player') {
       case 'rtc': voice.onSignal(m.from, m.data); break;
     }
   }
-  net.send({ t: 'hello', name: myName, look });
+  net.send({ t: 'hello', name: myName, look, token: memberToken });
+  // 會員：心跳（個 App 喺前面先計遊戲時間）
+  if (memberToken) setInterval(() => { if (document.visibilityState === 'visible') net.send({ t: 'beat' }); }, 15000);
   setInterval(() => {
     const L = P.ride >= 0 ? lifts.lifts[P.ride] : null;
     net.send({ t: 'st', s: { p: [+P.pos.x.toFixed(2), +(P.pos.y - (L ? L.y : 0)).toFixed(2), +P.pos.z.toFixed(2)], rl: L ? L.id : -1, r: +P.face.toFixed(2), a: P.anim, h: P.held, dg: P.pet ? petIndex(P.pet) + 1 : 0, sc: P.scale, sp: P.spraying ? 1 : 0, v: voice.enabled ? 1 : 0, sd: P.seat ? [P.seat.r, P.seat.s] : 0, bk: bikeOn ? 1 : 0, fl: P.flight ? [AIR_KINDS.indexOf(P.flight.kind), +P.flight.yaw.toFixed(2), +P.flight.pitch.toFixed(2), +P.flight.roll.toFixed(2), P.flight.color] : P.shuttle ? [1, +P.shuttle.yaw.toFixed(2), 0, 0, '#ff6f00'] : 0, bt: P.boat ? [+P.face.toFixed(2), P.boat.seat] : 0, sk: sky.riding() || P.cable ? 1 : 0, mk: P.mech ? P.mech.style + 1 : 0, ma: P.mech ? (P.mech.punchT > 0 ? 1 : P.mech.beamT > 0 ? 2 : 0) : 0, cp: P.camper, af: apartments.key(), tr: P.transit ? [transitIndex(P.transit.t.id), +P.transit.yaw.toFixed(2)] : 0, ps: P.pass || 0, lp: P.camper >= 0 ? [+P.lp.x.toFixed(2), +P.lp.y.toFixed(2), +P.lp.z.toFixed(2)] : 0 } });
@@ -1732,8 +1759,9 @@ function startGame(myName, role = 'player') {
     let ix = joy.x, iy = joy.y;
     if (keys.KeyW || keys.ArrowUp) iy += 1; if (keys.KeyS || keys.ArrowDown) iy -= 1;
     if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
-    if (school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
-    if (!api.admin) quiz.update(dt, school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
+    if (timeLocked || school.active() || nightLock.locked() || quiz.active() || liftFix.active()) { ix = iy = 0; }
+    if (!api.admin) quiz.update(dt, timeLocked || school.active() || jail.active() || nightLock.locked() || liftFix.active() || learn.isOpen());
+    if (hudT === 0 && acctNow) { const left = Math.max(0, acctNow.timeLeft - (timeLocked ? 0 : (performance.now() - acctAt) / 1000)); acctHint.textContent = `⏳ 剩 ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}（時間幣 ${acctNow.timeCoins}）｜🪙 金幣 ${acctNow.gold}`; }
     if (hudT === 0) { const l = quiz.left(); quizHint.textContent = api.admin ? '📝 管理員：免小測' : quiz.active() ? '📝 英文小測中' : `📝 ${Math.floor(l / 60)}:${String(Math.floor(l % 60)).padStart(2, '0')} 後英文小測`; }
     const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
     const fwd = new V3(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = new V3(Math.cos(camYaw), 0, -Math.sin(camYaw));

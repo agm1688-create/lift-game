@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const ACC = require('./accounts');
 
 const PORT = process.env.PORT || 3000;
 const PUB = path.join(__dirname, 'public');
@@ -12,8 +13,30 @@ const MIME = {
   '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml',
 };
 
+// ---------- 會員系統 API ----------
+const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace(/^::ffff:/, '');
+const json = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+function body(req) { return new Promise(r => { let d = ''; req.on('data', c => { d += c; if (d.length > 1e5) req.destroy(); }); req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } }); }); }
+async function api(req, res, p) {
+  const ip = ipOf(req);
+  if (req.method !== 'POST') return json(res, 405, { err: 'POST only' });
+  const b = await body(req);
+  if (p === '/api/login') return json(res, 200, ACC.login(b.name, b.pin, ip));
+  if (p === '/api/admin/login') return json(res, 200, ACC.adminLogin(b.pw, ip));
+  if (!ACC.isAdmin(req.headers['x-admin'])) return json(res, 401, { err: '請重新登入管理員' });
+  if (p === '/api/admin/state') { const on = new Set(); for (const [, pl] of players) if (pl.link) on.add(pl.link.m.id); return json(res, 200, ACC.adminState(on)); }
+  if (p === '/api/admin/action') {
+    const r = ACC.adminAction(b);
+    // 即時通知喺線嘅會員（例如加咗時間幣）
+    if (r.ok) for (const [, pl] of players) if (pl.link) { const a = ACC.acctOf(pl.link); if (a) send(pl.ws, { t: 'acct', acct: a, timeup: a.timeLeft <= 0 }); else { send(pl.ws, { t: 'kicked' }); pl.link = null; } }
+    return json(res, 200, r);
+  }
+  json(res, 404, { err: 'not found' });
+}
+
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
+  if (p.startsWith('/api/')) return api(req, res, p).catch(e => { console.error(e); json(res, 500, { err: '伺服器出錯' }); });
   if (p === '/') p = '/index.html';
   const file = path.normalize(path.join(PUB, p));
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end(); }
@@ -114,8 +137,8 @@ function broadcast(obj, except) {
 }
 function broadcastLifts() { broadcast({ t: 'lifts', lifts, now: Date.now() }); }
 
-wss.on('connection', ws => {
-  const id = nextId++;
+wss.on('connection', (ws, req) => {
+  const id = nextId++, ip = ipOf(req);
   ws.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch { return; }
     const now = Date.now();
@@ -124,7 +147,9 @@ wss.on('connection', ws => {
       case 'hello': {
         const name = String(m.name || '玩家').slice(0, 16);
         const look = m.look || {};
-        players.set(id, { ws, name, look, st: null });
+        const link = m.token ? ACC.startSession(m.token, ip) : null;
+        players.set(id, { ws, name, look, st: null, link, beat: now });
+        if (link) { const a = ACC.acctOf(link); send(ws, { t: 'acct', acct: a, timeup: a.timeLeft <= 0 }); }
         send(ws, {
           t: 'welcome', id, now, lifts, world,
           players: [...players].filter(([pid]) => pid !== id).map(([pid, p]) => ({ id: pid, name: p.name, look: p.look })),
@@ -134,6 +159,9 @@ wss.on('connection', ws => {
       }
       case 'st': if (me) me.st = m.s; break;
       case 'ping': send(ws, { t: 'pong', c: m.c, now }); break;
+      case 'beat': if (me) me.beat = now; break;
+      case 'quizOK': if (me && me.link) { const a = ACC.quizOK(me.link); if (a) send(ws, { t: 'acct', acct: a }); } break;
+      case 'exchange': if (me && me.link) { const r = ACC.exchange(me.link); send(ws, r.err ? { t: 'acctErr', err: r.err } : { t: 'acct', acct: r.acct, timeup: r.acct.timeLeft <= 0 }); } break;
       case 'lift': {
         const L = lifts[m.id]; if (!L || !me) break;
         liftCmd(L, m, now); broadcastLifts(); break;
@@ -150,7 +178,7 @@ wss.on('connection', ws => {
       case 'rtc': { const to = players.get(m.to); if (to && me) send(to.ws, { t: 'rtc', from: id, data: m.data }); break; }
     }
   });
-  ws.on('close', () => { if (players.delete(id)) broadcast({ t: 'leave', id }); });
+  ws.on('close', () => { const me = players.get(id); if (me && me.link) ACC.endSession(me.link); if (players.delete(id)) broadcast({ t: 'leave', id }); });
 });
 
 // 位置快照 10Hz；電梯 pendingOpen 處理
@@ -167,4 +195,18 @@ setInterval(() => {
   broadcast({ t: 'snap', p: snap, m: { ty: mon.ty, hp: mon.hp, mx: mon.mx, x: +mon.x.toFixed(1), z: +mon.z.toFixed(1), r: +mon.r.toFixed(2), s: mon.s, t0: mon.t0, tg: mon.tgt } });
 }, 100);
 
-server.listen(PORT, () => console.log(`搭Lift遊戲 running: http://localhost:${PORT}`));
+// 會員遊戲時間：每 15 秒計一次（個 App 要喺前面、15 秒內有心跳先計）
+const TICK = 15;
+setInterval(() => {
+  const now = Date.now();
+  for (const [, p] of players) {
+    if (!p.link || now - p.beat > 40000) continue;
+    const r = ACC.tick(p.link, TICK);
+    if (r.gone) { send(p.ws, { t: 'kicked' }); p.link = null; continue; }
+    send(p.ws, { t: 'acct', acct: r.acct, timeup: r.timeup });
+  }
+}, TICK * 1000);
+const bye = () => ACC.flush().finally(() => process.exit(0));
+process.on('SIGTERM', bye); process.on('SIGINT', bye);
+
+ACC.load().catch(e => console.error('會員系統載入失敗', e)).finally(() => server.listen(PORT, () => console.log(`搭Lift遊戲 running: http://localhost:${PORT}`)));

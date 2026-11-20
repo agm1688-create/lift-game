@@ -26,14 +26,14 @@ export const nightId = () => { const n = hkNow(); if (n.h >= 22) return `${n.y}$
 export const isNight = () => { const h = hkNow().h; return h >= 22 || h < 6; };
 const injectCSS = () => { if (document.getElementById('nlCSS')) return; const st = document.createElement('style'); st.id = 'nlCSS'; st.textContent = CSS; document.head.appendChild(st); };
 // 登入密碼：8844 = 管理員（唔使做小測）；今日日期（年月日 8 個數字）= 普通玩家
-export function askLogin(api, onOk) {
+export function askLogin(api, name, onOk) {
   injectCSS();
   let el = document.getElementById('pwAsk');
   if (!el) { el = document.createElement('div'); el.id = 'pwAsk'; document.body.appendChild(el); }
-  let input = '';
+  let input = '', busy = false;
   const onKey = e => { if (/^Digit\d$|^Numpad\d$/.test(e.code)) key(e.code.slice(-1)); else if (e.code === 'Backspace') key('del'); else if (e.code === 'Enter' || e.code === 'NumpadEnter') key('ok'); else return; e.preventDefault(); e.stopPropagation(); };
   function render(msg = '') {
-    el.innerHTML = `<div class="nb"><h2>🔑 登入遊戲</h2><div class="sub">請輸入登入密碼</div>
+    el.innerHTML = `<div class="nb"><h2>🔑 會員登入</h2><div class="sub">會員：<b>${name.replace(/[<&>]/g, '')}</b>　請輸入密碼</div>
       <div class="pw">${input.replace(/./g, '●') || '&nbsp;'}</div><div class="msg">${msg}</div>
       <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-k="${k}">${k}</button>`).join('')}<button class="del" data-k="del">⌫</button><button data-k="0">0</button><button class="ok" data-k="ok">✔</button></div></div>`;
     el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
@@ -42,12 +42,17 @@ export function askLogin(api, onOk) {
     api.sfx?.click?.();
     if (/^\d$/.test(k)) { if (input.length < 8) input += k; return render(); }
     if (k === 'del') { input = input.slice(0, -1); return render(); }
-    if (k !== 'ok') return;
-    const role = input === ADMIN_PW ? 'admin' : input === todayPw() ? 'player' : null;
-    if (!role) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); return render('❌ 密碼唔啱，再試過'); }
-    el.style.display = 'none'; removeEventListener('keydown', onKey, true);
-    if (isNight()) api.store?.set('nightOK', nightId());   // 夜晚登入咗就唔使再輸多次
-    onOk(role);
+    if (k !== 'ok' || busy) return;
+    busy = true; render('⏳ 登入緊…');
+    fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin: input }) })
+      .then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }))
+      .then(r => {
+        busy = false;
+        if (!r.ok) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); return render('❌ ' + (r.err || '密碼唔啱')); }
+        el.style.display = 'none'; removeEventListener('keydown', onKey, true);
+        if (isNight()) api.store?.set('nightOK', nightId());   // 夜晚登入咗就唔使再輸多次
+        onOk(r.role, r.token || '', r.acct || null);
+      });
   }
   addEventListener('keydown', onKey, true);
   render(); el.style.display = 'flex';

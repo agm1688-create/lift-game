@@ -180,7 +180,7 @@ export function buildQuiz(api) {
   function answer(i) {
     const q = S.q; if (!q || locked) return;
     const ok = i === q.ans, mark = []; mark[i] = ok ? 'right' : 'wrong'; if (!ok && q.mode === 'g') mark[q.ans] = 'right';
-    if (ok) api.sfx.pickup(); else api.sfx.error();
+    if (ok) { api.sfx.pickup(); api.onQuizOK?.(); } else api.sfx.error();
     if (q.mode === 'v') {
       if (!ok) { render(`❌ 唔係喎，再試吓！`, '#c62828', mark); api.say('Try again!', '再試吓！', { force: true, now: true }); return; }
       render(`✅ 啱咗！${q.text} = ${q.ops[q.ans]}`, '#2e7d32', mark);
