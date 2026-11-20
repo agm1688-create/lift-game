@@ -133,7 +133,7 @@ $('applyBtn').onclick = () => {
   const inp = 'width:100%;box-sizing:border-box;padding:10px 12px;font-size:18px;border-radius:10px;border:2px solid #90caf9;background:#0008;color:#fff;margin:4px 0 10px';
   el.innerHTML = `<div style="width:min(380px,94vw);max-height:96dvh;overflow-y:auto;background:#16263d;border:2px solid #ffd864;border-radius:16px;padding:16px">
     <h2 style="margin:0 0 6px;color:#ffe082;font-size:22px">📝 申請做會員</h2>
-    <div style="font-size:14px;opacity:.85;margin-bottom:10px">填好之後等管理員批准，批准咗就可以用呢個會員名同密碼登入。</div>
+    <div style="font-size:14px;opacity:.85;margin-bottom:10px">填好就即刻開帳戶，可以馬上玩！</div>
     <label style="font-size:14px">會員名（中文 / 英文 / 數字，最多 10 個字）</label>
     <input id="apName" maxlength="10" style="${inp}" value="${($('name').value || '').replace(/[^㐀-鿿A-Za-z0-9]/g, '').slice(0, 10)}">
     <label style="font-size:14px">密碼（4 個數字）</label>
@@ -151,12 +151,13 @@ $('applyBtn').onclick = () => {
     if (!/^[㐀-鿿A-Za-z0-9]{1,10}$/.test(name)) return msg('會員名只可以用中文、英文字母同數字，最多 10 個字');
     if (!/^\d{4}$/.test(pin)) return msg('密碼要啱啱好 4 個數字');
     if (pin !== pin2) return msg('兩次輸入嘅密碼唔一樣');
-    msg('⏳ 送出緊…', true);
+    msg('⏳ 開緊帳戶…', true);
     const r = await fetch('/api/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }));
     if (!r.ok) return msg('❌ ' + (r.err || '申請唔成功'));
-    $('name').value = name;
-    el.querySelector('div').innerHTML = `<h2 style="margin:0 0 8px;color:#a5d6a7">✅ 申請已經送出</h2><div style="font-size:16px;line-height:1.6">會員名：<b>${name}</b><br>請記住你嘅 4 位數字密碼。<br>等管理員批准之後，喺開始畫面輸入會員名，撳「開始玩」再輸入密碼就得。</div><button id="apDone" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:12px;background:#1e88e5;color:#fff;font-size:18px;cursor:pointer">知道</button>`;
-    el.querySelector('#apDone').onclick = () => { el.style.display = 'none'; };
+    store.set('member', { name: r.name, token: r.token }); showSaved();   // 開咗帳戶即刻記住呢部機
+    const tc = r.acct ? r.acct.timeCoins : 0, mins = r.acct ? r.acct.minPerCoin : 0;
+    el.querySelector('div').innerHTML = `<h2 style="margin:0 0 8px;color:#a5d6a7">🎉 開咗帳戶！</h2><div style="font-size:16px;line-height:1.6">會員名：<b>${r.name}</b><br>請記住你嘅 4 位數字密碼，換機或者換瀏覽器要用。${tc ? `<br>送你 ${tc} 個時間幣（每個玩 ${mins} 分鐘）⏳` : ''}</div><button id="apDone" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:12px;background:linear-gradient(#ffd864,#e8a800);color:#2a1a00;font-size:20px;font-weight:700;cursor:pointer">開始玩 ▶</button>`;
+    el.querySelector('#apDone').onclick = () => { el.style.display = 'none'; $('go').click(); };
   };
   el.querySelector('#apName').focus();
 };

@@ -59,7 +59,7 @@
       <div class="msg" id="hMsg"></div>
     </section>
 
-    <section class="card" id="appCard">
+    <section class="card hidden" id="appCard">
       <h2>📝 待批申請 <span class="sub" id="appCount"></span></h2>
       <div class="tbl"><table>
         <thead><tr><th>申請會員名</th><th>申請時間</th><th>IP 地址</th><th>操作</th></tr></thead>
@@ -74,7 +74,7 @@
         <label>每 1 個時間幣可以玩（分鐘）<input id="sMin" type="number" min="1" max="600"></label>
         <label>每答啱 1 條小測得（金幣）<input id="sQuiz" type="number" min="0"></label>
         <label>幾多金幣換 1 個時間幣（0 = 唔准換）<input id="sEx" type="number" min="0"></label>
-        <label>批准申請時送幾多時間幣<input id="sApC" type="number" min="0"></label>
+        <label>新會員申請時送幾多時間幣<input id="sApC" type="number" min="0"></label>
         <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input id="sApO" type="checkbox" style="width:auto"> 接受新會員申請</label>
         <button class="p" id="btnSet">儲存設定</button>
       </div>
@@ -141,6 +141,7 @@ async function refresh(first) {
   const on = data.members.filter(m => m.online).length;
   $('helpCount').textContent = data.helps.length ? `（${data.helps.length} 個等緊）` : '';
   $('hBody').innerHTML = data.helps.length ? data.helps.map(h => `<tr><td><b>${esc(h.name)}</b>${h.mid ? '' : ' <span class="sub">（冇呢個會員，可能打錯名）</span>'}</td><td>${fmtT(h.at)}</td><td class="num">${esc(h.ip)}</td><td>${h.mid ? `<button class="s p" data-hp="pin" data-id="${h.id}">🔑 設新密碼</button> ` : ''}<button class="s" data-hp="done" data-id="${h.id}">✔ 處理咗</button></td></tr>`).join('') : '<tr><td colspan="4" class="sub">冇求助</td></tr>';
+  $('appCard').classList.toggle('hidden', !data.apps.length);
   $('appCount').textContent = data.apps.length ? `（${data.apps.length} 個等緊）` : '';
   $('aBody').innerHTML = data.apps.length ? data.apps.map(a => `<tr><td><b>${esc(a.name)}</b></td><td>${fmtT(a.at)}</td><td class="num">${esc(a.ip)}</td><td><button class="s p" data-ap="approve" data-id="${a.id}">✔ 批准</button> <button class="s d" data-ap="reject" data-id="${a.id}">✖ 拒絕</button></td></tr>`).join('') : '<tr><td colspan="4" class="sub">冇新申請</td></tr>';
   const waiting = data.apps.length + data.helps.length;

@@ -25,6 +25,8 @@ async function load() {
     try { S = Object.assign(S, JSON.parse(fs.readFileSync(FILE, 'utf8'))); } catch (e) { console.error('accounts.json 讀唔到', e); }
   }
   S.settings = Object.assign({ ...DEF }, S.settings); S.apps = S.apps || []; S.nextAid = S.nextAid || 1; S.helps = S.helps || []; S.nextHid = S.nextHid || 1;
+  if (S.apps.length) dirty = true;
+  for (const a of S.apps.splice(0)) if (!byName(a.name)) S.members.push({ id: S.nextId++, name: a.name, pin: a.pin, timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: 0, totalSec: 0, created: Date.now(), lastIp: a.ip });
   console.log(`會員系統：${S.members.length} 個會員（儲存：${storage()}）`);
 }
 async function flush() {
@@ -65,11 +67,14 @@ function apply(name, pin, ip) {
   if (!/^\d{4}$/.test(pin)) return { ok: false, err: '密碼要啱啱好 4 個數字' };
   if (pin === ADMIN_PW) return { ok: false, err: '呢個密碼唔用得，請揀過第二個' };
   if (byName(name)) return { ok: false, err: '呢個會員名已經有人用咗' };
-  if (S.apps.some(a => a.name.toLowerCase() === name.toLowerCase())) return { ok: false, err: '呢個會員名已經申請緊，等管理員批准' };
-  if (S.apps.filter(a => a.ip === ip).length >= 3) return { ok: false, err: '你已經申請咗好多個，等管理員處理先' };
-  if (S.apps.length >= 100) return { ok: false, err: '申請太多，請遲啲再試' };
-  S.apps.push({ id: S.nextAid++, name, pin: hashPin(pin), ip, at: Date.now() }); touch();
-  return { ok: true };
+  if (S.apps.some(a => a.name.toLowerCase() === name.toLowerCase())) return { ok: false, err: '呢個會員名已經有人用咗' };
+  // 防亂開：同一個 IP 24 小時內最多開 5 個帳戶
+  const day = Date.now() - 864e5;
+  if (S.members.filter(m => m.createdIp === ip && m.created > day).length >= 5) return { ok: false, err: '今日呢度開咗好多個帳戶，聽日再試或者搵管理員' };
+  // 唔使批：即刻開帳戶，送時間幣，可以即刻玩
+  const m = { id: S.nextId++, name, pin: hashPin(pin), timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: 0, totalSec: 0, created: Date.now(), createdIp: ip, token: crypto.randomBytes(16).toString('hex') };
+  S.members.push(m); touch();
+  return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 
 // ---------- 遊戲登入 ----------
