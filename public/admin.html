@@ -50,6 +50,15 @@
   <main>
     <div class="warn hidden" id="storeWarn">⚠️ 未連接資料庫：而家資料只係暫存喺伺服器，每次 deploy 或者伺服器重開都會清晒。請喺 Render 設定 DATABASE_URL。</div>
 
+    <section class="card" id="helpCard">
+      <h2>🙋 忘記密碼求助 <span class="sub" id="helpCount"></span></h2>
+      <div class="tbl"><table>
+        <thead><tr><th>會員名</th><th>求助時間</th><th>IP 地址</th><th>操作</th></tr></thead>
+        <tbody id="hBody"></tbody>
+      </table></div>
+      <div class="msg" id="hMsg"></div>
+    </section>
+
     <section class="card" id="appCard">
       <h2>📝 待批申請 <span class="sub" id="appCount"></span></h2>
       <div class="tbl"><table>
@@ -130,9 +139,12 @@ async function refresh(first) {
   if (data.err) return;
   $('storeWarn').classList.toggle('hidden', data.storage === 'database');
   const on = data.members.filter(m => m.online).length;
+  $('helpCount').textContent = data.helps.length ? `（${data.helps.length} 個等緊）` : '';
+  $('hBody').innerHTML = data.helps.length ? data.helps.map(h => `<tr><td><b>${esc(h.name)}</b>${h.mid ? '' : ' <span class="sub">（冇呢個會員，可能打錯名）</span>'}</td><td>${fmtT(h.at)}</td><td class="num">${esc(h.ip)}</td><td>${h.mid ? `<button class="s p" data-hp="pin" data-id="${h.id}">🔑 設新密碼</button> ` : ''}<button class="s" data-hp="done" data-id="${h.id}">✔ 處理咗</button></td></tr>`).join('') : '<tr><td colspan="4" class="sub">冇求助</td></tr>';
   $('appCount').textContent = data.apps.length ? `（${data.apps.length} 個等緊）` : '';
   $('aBody').innerHTML = data.apps.length ? data.apps.map(a => `<tr><td><b>${esc(a.name)}</b></td><td>${fmtT(a.at)}</td><td class="num">${esc(a.ip)}</td><td><button class="s p" data-ap="approve" data-id="${a.id}">✔ 批准</button> <button class="s d" data-ap="reject" data-id="${a.id}">✖ 拒絕</button></td></tr>`).join('') : '<tr><td colspan="4" class="sub">冇新申請</td></tr>';
-  document.title = data.apps.length ? `(${data.apps.length}) 會員管理` : '會員管理';
+  const waiting = data.apps.length + data.helps.length;
+  document.title = waiting ? `(${waiting}) 會員管理` : '會員管理';
   $('status').textContent = `${data.members.length} 個會員｜${data.apps.length} 個申請｜${on} 個喺線｜儲存：${data.storage === 'database' ? '資料庫' : '暫存'}`;
   if (first || ![$('sMin'), $('sQuiz'), $('sEx'), $('sApC')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; $('sApC').value = data.settings.applyCoins; $('sApO').checked = !!data.settings.applyOpen; }
   $('mBody').innerHTML = data.members.length ? data.members.map(m => `<tr>
@@ -143,7 +155,7 @@ async function refresh(first) {
     <td class="num">${fmtD(m.totalSec)}</td>
     <td>${fmtT(m.lastLogin)}</td>
     <td class="num">${esc(m.lastIp) || '—'}</td>
-    <td><button class="s" data-op="pin" data-id="${m.id}">改密碼</button> <button class="s d" data-op="delete" data-id="${m.id}">刪除</button></td></tr>`).join('') : '<tr><td colspan="8" class="sub">未有會員，喺上面開一個。</td></tr>';
+    <td><button class="s" data-op="pin" data-id="${m.id}">改密碼</button> <button class="s" data-op="logoutAll" data-id="${m.id}" title="部機唔見咗嗰陣用：所有機要重新輸入密碼">登出所有機</button> <button class="s d" data-op="delete" data-id="${m.id}">刪除</button></td></tr>`).join('') : '<tr><td colspan="8" class="sub">未有會員，喺上面開一個。</td></tr>';
   renderSessions();
 }
 function renderSessions() {
@@ -157,11 +169,20 @@ $('btnLogin').onclick = login; $('pw').onkeydown = e => { if (e.key === 'Enter')
 $('btnOut').onclick = logout;
 $('fName').oninput = renderSessions;
 $('btnSet').onclick = () => act({ op: 'settings', minPerCoin: $('sMin').value, goldPerQuiz: $('sQuiz').value, goldPerTimeCoin: $('sEx').value, applyCoins: $('sApC').value, applyOpen: $('sApO').checked }, $('setMsg'));
+$('hBody').onclick = async e => {
+  const b = e.target.closest('button[data-hp]'); if (!b) return;
+  const h = data.helps.find(x => x.id === +b.dataset.id);
+  if (b.dataset.hp === 'done') return act({ op: 'helpDone', id: h.id }, $('hMsg'));
+  const pin = prompt(`幫「${h.name}」設新密碼（4–8 個數字），設好之後話俾佢知`); if (pin == null) return;
+  const r = await act({ op: 'pin', id: h.mid, pin }, $('hMsg'));
+  if (r.ok) msg($('hMsg'), `已經幫「${h.name}」設好新密碼：${pin}`, true);
+};
 $('aBody').onclick = e => { const b = e.target.closest('button[data-ap]'); if (!b) return; const a = data.apps.find(x => x.id === +b.dataset.id); if (b.dataset.ap === 'reject' && !confirm(`拒絕「${a.name}」嘅申請？`)) return; act({ op: b.dataset.ap, id: a.id }, $('aMsg')); };
 $('btnNew').onclick = async () => { const r = await act({ op: 'create', name: $('nName').value, pin: $('nPin').value, timeCoins: $('nCoins').value, gold: $('nGold').value }, $('newMsg')); if (r.ok) { $('nName').value = ''; $('nPin').value = ''; } };
 $('mBody').onclick = async e => {
   const b = e.target.closest('button[data-op]'); if (!b) return;
   const id = +b.dataset.id, m = data.members.find(x => x.id === id), op = b.dataset.op;
+  if (op === 'logoutAll' && !confirm(`「${m.name}」所有記住咗嘅機都會登出，下次要重新輸入密碼。確定？`)) return;
   if (op === 'delete' && !confirm(`確定刪除會員「${m.name}」？佢嘅時間幣同金幣會冇晒，唔可以還原。`)) return;
   let pin; if (op === 'pin') { pin = prompt(`輸入「${m.name}」嘅新密碼（4–8 個數字）`); if (pin == null) return; }
   act({ op, id, n: b.dataset.n, pin }, $('mMsg'));

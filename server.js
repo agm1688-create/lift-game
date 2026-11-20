@@ -23,6 +23,8 @@ async function api(req, res, p) {
   const b = await body(req);
   if (p === '/api/login') return json(res, 200, ACC.login(b.name, b.pin, ip));
   if (p === '/api/apply') return json(res, 200, ACC.apply(b.name, b.pin, ip));
+  if (p === '/api/resume') return json(res, 200, ACC.resume(b.token, ip));
+  if (p === '/api/forgot') return json(res, 200, ACC.forgot(b.name, ip));
   if (p === '/api/admin/login') return json(res, 200, ACC.adminLogin(b.pw, ip));
   if (!ACC.isAdmin(req.headers['x-admin'])) return json(res, 401, { err: '請重新登入管理員' });
   if (p === '/api/admin/state') { const on = new Set(); for (const [, pl] of players) if (pl.link) on.add(pl.link.m.id); return json(res, 200, ACC.adminState(on)); }

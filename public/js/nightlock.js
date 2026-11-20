@@ -35,11 +35,20 @@ export function askLogin(api, name, onOk) {
   function render(msg = '') {
     el.innerHTML = `<div class="nb"><h2>🔑 會員登入</h2><div class="sub">會員：<b>${name.replace(/[<&>]/g, '')}</b>　請輸入密碼</div>
       <div class="pw">${input.replace(/./g, '●') || '&nbsp;'}</div><div class="msg">${msg}</div>
-      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-k="${k}">${k}</button>`).join('')}<button class="del" data-k="del">⌫</button><button data-k="0">0</button><button class="ok" data-k="ok">✔</button></div></div>`;
+      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-k="${k}">${k}</button>`).join('')}<button class="del" data-k="del">⌫</button><button data-k="0">0</button><button class="ok" data-k="ok">✔</button></div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button data-k="back" style="flex:1;padding:9px;border-radius:10px;border:1px solid #fff8;background:none;color:#fff;font-size:15px;cursor:pointer">↩ 返回改會員名</button><button data-k="forgot" style="flex:1;padding:9px;border-radius:10px;border:1px solid #ffd54f;background:none;color:#ffd54f;font-size:15px;cursor:pointer">🙋 忘記密碼</button></div></div>`;
     el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
   }
+  const close = () => { el.style.display = 'none'; removeEventListener('keydown', onKey, true); };
   function key(k) {
     api.sfx?.click?.();
+    if (k === 'back') return close();
+    if (k === 'forgot') {
+      if (busy) return; busy = true; render('⏳ 通知緊管理員…');
+      return fetch('/api/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+        .then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }))
+        .then(r => { busy = false; render(r.ok ? '<span style="color:#a5d6a7">✅ 已經通知管理員！請搵管理員幫你設新密碼。</span>' : '❌ ' + r.err); });
+    }
     if (/^\d$/.test(k)) { if (input.length < 8) input += k; return render(); }
     if (k === 'del') { input = input.slice(0, -1); return render(); }
     if (k !== 'ok' || busy) return;
@@ -49,7 +58,7 @@ export function askLogin(api, name, onOk) {
       .then(r => {
         busy = false;
         if (!r.ok) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); return render('❌ ' + (r.err || '密碼唔啱')); }
-        el.style.display = 'none'; removeEventListener('keydown', onKey, true);
+        close();
         if (isNight()) api.store?.set('nightOK', nightId());   // 夜晚登入咗就唔使再輸多次
         onOk(r.role, r.token || '', r.acct || null);
       });

@@ -24,7 +24,7 @@ async function load() {
   } else if (fs.existsSync(FILE)) {
     try { S = Object.assign(S, JSON.parse(fs.readFileSync(FILE, 'utf8'))); } catch (e) { console.error('accounts.json 讀唔到', e); }
   }
-  S.settings = Object.assign({ ...DEF }, S.settings); S.apps = S.apps || []; S.nextAid = S.nextAid || 1;
+  S.settings = Object.assign({ ...DEF }, S.settings); S.apps = S.apps || []; S.nextAid = S.nextAid || 1; S.helps = S.helps || []; S.nextHid = S.nextHid || 1;
   console.log(`會員系統：${S.members.length} 個會員（儲存：${storage()}）`);
 }
 async function flush() {
@@ -84,6 +84,22 @@ function login(name, pin, ip) {
   return { ok: true, role: 'member', token: m.token, acct: acct(m) };
 }
 const byToken = t => t && S.members.find(m => m.token === t);
+// 記住呢部機：用通行證直接登入
+function resume(token, ip) {
+  if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
+  const m = byToken(String(token || ''));
+  if (!m) { fail(ip); return { ok: false, err: '要再輸入一次密碼' }; }
+  return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
+}
+// 忘記密碼：通知管理員
+function forgot(name, ip) {
+  name = String(name || '').trim().slice(0, 16);
+  if (!name) return { ok: false, err: '先填會員名' };
+  if (S.helps.filter(h => h.ip === ip).length >= 5 || S.helps.length >= 100) return { ok: false, err: '求助太多，請直接搵管理員' };
+  const m = byName(name);
+  if (!S.helps.some(h => h.name.toLowerCase() === name.toLowerCase())) { S.helps.push({ id: S.nextHid++, name, mid: m ? m.id : 0, ip, at: Date.now() }); touch(); }
+  return { ok: true };
+}
 
 // ---------- 遊戲中：開始 / 心跳 / 結束 ----------
 function startSession(token, ip) {
@@ -131,6 +147,7 @@ function adminState(onlineIds) {
     members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id) })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
+    helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
   };
 }
 function adminAction(a) {
@@ -153,6 +170,7 @@ function adminAction(a) {
     if (a.applyOpen != null) s.applyOpen = a.applyOpen ? 1 : 0;
     touch(); return { ok: true };
   }
+  if (a.op === 'helpDone') { S.helps = S.helps.filter(h => h.id !== Number(a.id)); touch(); return { ok: true }; }
   if (a.op === 'approve' || a.op === 'reject') {
     const ap = S.apps.find(x => x.id === Number(a.id)); if (!ap) return { err: '搵唔到呢個申請' };
     S.apps = S.apps.filter(x => x !== ap);
@@ -165,10 +183,11 @@ function adminAction(a) {
   const m = byId(Number(a.id)); if (!m) return { err: '搵唔到會員' };
   if (a.op === 'coins') { m.timeCoins = Math.max(0, (m.timeCoins || 0) + num(a.n)); }
   else if (a.op === 'gold') m.gold = Math.max(0, (m.gold || 0) + num(a.n));
-  else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; }
+  else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
+  else if (a.op === 'logoutAll') m.token = null;
   else if (a.op === 'delete') S.members = S.members.filter(x => x !== m);
   else return { err: '唔識呢個動作' };
   touch(); return { ok: true, changed: m.id };
 }
 
-module.exports = { load, flush, apply, login, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
+module.exports = { load, flush, apply, login, resume, forgot, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };

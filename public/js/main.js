@@ -165,12 +165,32 @@ $('go').onclick = () => {
   store.set('look', look); store.set('name', name);
   initAudio(); unlockSpeech();
   if (isTouch) enterFullscreen(false);
-  askLogin({ store, sfx: { click: () => {} } }, name, (role, token) => {
+  const enter = (role, token, nm = name) => {
+    if (role === 'member' && token) store.set('member', { name: nm, token });   // 記住呢部機
     pv.run = false; pv.r.dispose();
     $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
-    startGame(name, role, token);
-  });
+    startGame(nm, role, token);
+  };
+  const ask = () => askLogin({ store, sfx: { click: () => {} } }, name, (role, token) => enter(role, token));
+  const saved = store.get('member', null);
+  if (saved && saved.token && saved.name.toLowerCase() === name.toLowerCase()) {
+    $('go').disabled = true; $('go').textContent = '⏳ 登入緊…';
+    fetch('/api/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: saved.token }) })
+      .then(r => r.json()).catch(() => ({ err: '連唔到伺服器' }))
+      .then(r => { $('go').disabled = false; $('go').textContent = '開始玩 ▶'; if (r.ok) enter('member', r.token, r.name); else { store.set('member', null); showSaved(); ask(); } });
+  } else ask();
 };
+// 記住呢部機：開始畫面顯示「歡迎返嚟」+ 轉會員
+function showSaved() {
+  let w = document.getElementById('savedMember');
+  const saved = store.get('member', null);
+  if (!saved) { if (w) w.remove(); return; }
+  if (!w) { w = document.createElement('div'); w.id = 'savedMember'; w.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#1b5e2033;border:1px solid #81c78488;border-radius:10px;padding:6px 10px;font-size:14px;color:#c8e6c9'; $('name').after(w); }
+  $('name').value = saved.name;
+  w.innerHTML = `<span style="flex:1">👋 歡迎返嚟，<b>${saved.name.replace(/[<&>]/g, '')}</b>！呢部機記住咗你，撳「開始玩」就得。</span><button type="button" id="switchMember" style="padding:4px 10px;border-radius:8px;border:1px solid #fff8;background:none;color:#fff;font-size:13px;cursor:pointer">🔄 轉會員</button>`;
+  w.querySelector('#switchMember').onclick = () => { store.set('member', null); $('name').value = ''; showSaved(); $('name').focus(); };
+}
+showSaved();
 
 // ================= 遊戲 =================
 function startGame(myName, role = 'player', memberToken = '') {
