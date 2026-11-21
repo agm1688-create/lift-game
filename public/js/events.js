@@ -93,8 +93,8 @@ export function buildEvents(scene, api) {
     const from = { x: stand.x + (Math.random() < 0.5 ? -1 : 1) * rand(250, 380), z: stand.z + (Math.random() < 0.5 ? -1 : 1) * rand(150, 300) };
     if (inExcl(from.x, from.z) || Math.abs(from.x) > HALF_WORLD - 150 || Math.abs(from.z) > HALF_WORLD - 150) { from.x = stand.x; from.z = stand.z + (stand.z > 0 ? -300 : 300); }
     const R = planRoute(from, { x: stand.x, z: stand.z }, TOWN);
-    fire = { face, stand, R, s: 0, hp: 100, t: 0, helped: 0, arrived: false, spraying: false, sirenT: 0, w: r.v ? 0 : 1, dir: r.v ? Math.sign(r.L - bx) : Math.sign(r.L - bz) };
-    truck.visible = true; truck.position.copy(R.pts[0]);
+    fire = { face, stand, R, s: 0, hp: 100, t: 0, helped: 0, arrived: false, spraying: false, sirenT: 0, w: r.v ? 0 : 1, dir: r.v ? Math.sign(r.L - bx) : Math.sign(r.L - bz), stolen: !!truck.userData.taken };
+    truck.visible = !truck.userData.taken; truck.position.copy(R.pts[0]);
     api.toast('🔥 火警！附近有大廈著火，消防車趕緊嚟！\n可以拎滅火筒去幫手救火', 5000); api.sfx.firebell(2);
     api.say('Fire! Fire! A building is on fire. The fire engine is coming!', '火警！有大廈著火，消防車嚟緊！');
     return true;
@@ -109,7 +109,8 @@ export function buildEvents(scene, api) {
     // 消防車
     F.sirenT -= dt; if (F.sirenT <= 0 && Math.hypot(truck.position.x - p.x, truck.position.z - p.z) < 250) { F.sirenT = 1.2; api.sfx.siren(); }
     const flash = Math.floor(F.t * 6) % 2; truck.userData.lights[0].emissiveIntensity = flash ? 3 : 0.2; truck.userData.lights[1].emissiveIntensity = flash ? 0.2 : 3;
-    if (!F.arrived) {
+    if (F.stolen) { /* 消防車俾玩家搶咗：冇消防員，要靠玩家拎消防喉救火 */ }
+    else if (!F.arrived) {
       F.s += 19 * dt;
       const yaw = routeAt(F.R, F.s, truck.position); truck.rotation.y = yaw;
       truck.userData.wheels.forEach(w => w.rotation.x += 19 * dt / 0.5);
@@ -128,8 +129,8 @@ export function buildEvents(scene, api) {
       }
       F.hp -= 3.5 * dt;
     }
-    // 玩家用滅火筒幫手
-    if (api.spraying() && Math.hypot(p.x - F.face.x, p.z - F.face.z) < 18) { F.hp -= 9 * dt; F.helped += dt; }
+    // 玩家用滅火筒 / 消防喉幫手（消防喉射得遠啲、熄火快啲）
+    { const hose = api.hosing?.(); if (api.spraying() && Math.hypot(p.x - F.face.x, p.z - F.face.z) < (hose ? 32 : 18)) { F.hp -= (hose ? 15 : 9) * dt; F.helped += dt; } }
     if (F.hp <= 0) {
       const helped = F.helped > 1.5;
       api.toast(helped ? '🎉 火救熄咗！消防隊長：多謝你幫手！獎你 $150' : '✅ 消防員救熄咗火，冇人受傷 👍', 4500);
@@ -138,7 +139,7 @@ export function buildEvents(scene, api) {
       endFire();
     } else if (Math.hypot(p.x - F.face.x, p.z - F.face.z) > 900 || F.t > 240) endFire();
   }
-  function endFire() { fire = null; truck.visible = false; crew.forEach(c => c.visible = false); fireLight.intensity = 0; }
+  function endFire() { fire = null; if (!truck.userData.taken) truck.visible = false; crew.forEach(c => c.visible = false); fireLight.intensity = 0; }
 
   // ---------- 賊 + 警察 ----------
   const thiefAv = buildAvatar({ gender: 'm', skin: '#d8a273', hat: 'beanie', shirt: '#212121', pants: '#263238', hair: '#111' });
@@ -183,7 +184,7 @@ export function buildEvents(scene, api) {
       if (!(DIRS[d][0] ? segOK(a0, lineOf(R.z), a0 + CHUNK, lineOf(R.z)) : segOK(lineOf(R.x), a0, lineOf(R.x), a0 + CHUNK))) continue;
       thief = { R, cop: { s: 0 }, car: { s: 0 }, t: 0, caught: 0, by: '', sirenT: 0, copStart: 16 };
       thief.cop.s = -thief.copStart; thief.car.s = -thief.copStart - 12;
-      [thiefAv, cop, pcar].forEach(o => o.visible = true);
+      [thiefAv, cop].forEach(o => o.visible = true); pcar.visible = !pcar.userData.taken;
       thiefAv.position.set(R.x, 0, R.z); cop.position.copy(R.pts[0]); pcar.position.copy(R.pts[0]);
       api.toast('🦹 有賊搶咗手袋！警察追緊佢！\n你都可以追上去捉住個賊（行到佢身邊）', 5000);
       api.say('Stop, thief! The police officer is chasing the thief.', '捉賊呀！警察追緊個賊！');
@@ -203,7 +204,7 @@ export function buildEvents(scene, api) {
       const head = new V3(T.R.x, 0, T.R.z);
       const cy = follow(T.cop, T.R.pts, head, 6.9 * dt, tmp); cop.position.copy(tmp); cop.rotation.y = cy;
       animateAvatar(cop, 1, dt, 1.4);
-      const py = follow(T.car, T.R.pts, head, 6.9 * dt, tmp); pcar.position.copy(tmp); pcar.rotation.y = py;
+      if (!pcar.userData.taken) { const py = follow(T.car, T.R.pts, head, 6.9 * dt, tmp); pcar.position.copy(tmp); pcar.rotation.y = py; }
       if (Math.hypot(p.x - T.R.x, p.z - T.R.z) < 2.3 && Math.abs(p.y) < 2) catchIt('player');
       else if (T.cop.s > 1 && cop.position.distanceTo(thiefAv.position) < 1.4) catchIt('police');
     } else {
@@ -225,7 +226,7 @@ export function buildEvents(scene, api) {
       api.say('The police caught the thief. Hands up!', '警察捉到個賊：舉高雙手！');
     }
   }
-  function endThief() { thief = null; [thiefAv, cop, pcar].forEach(o => o.visible = false); }
+  function endThief() { thief = null; [thiefAv, cop].forEach(o => o.visible = false); if (!pcar.userData.taken) pcar.visible = false; }
 
   // 正常城市範圍先會有事件發生
   const okZone = p => Math.abs(p.x) < HALF_WORLD - 200 && Math.abs(p.z) < HALF_WORLD - 200 && p.y < 40 && !inExcl(p.x, p.z, -20);
@@ -261,5 +262,21 @@ export function buildEvents(scene, api) {
       if (K.t <= 0) knocks.delete(o);
     }
   }
-  return { truck, pcar, knock, applyKnocks, update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
+  // ---------- 俾玩家搶車：消防車 / 警車由玩家揸走（落車之後架車由玩家嗰邊處理）----------
+  function steal(o) {
+    o.userData.taken = true; o.visible = false; knocks.delete(o);
+    if (o === truck && fire) { fire.stolen = true; crew.forEach(c => c.visible = false); }
+  }
+  function giveBack(o) { o.userData.taken = false; if (o === truck ? !fire || fire.stolen : !thief) o.visible = false; else o.visible = true; }
+  // 消防喉射水：有火就對準火頭射（拋物線），冇火就向前射
+  function hoseSpray(o, yaw) {
+    const F = fire, aim = F && Math.hypot(o.x - F.face.x, o.z - F.face.z) < 34;
+    for (let n = 0; n < 4; n++) {
+      if (aim) { const T = 1.1, to = F.face.clone().sub(o); emit(water, o.x, o.y, o.z, to.x / T + rand(-0.5, 0.5), to.y / T + 9.8 * T / 2 + rand(-0.4, 0.4), to.z / T + rand(-0.5, 0.5), T); }
+      else emit(water, o.x, o.y, o.z, Math.sin(yaw) * 14 + rand(-0.6, 0.6), 4 + rand(-0.5, 0.5), Math.cos(yaw) * 14 + rand(-0.6, 0.6), 1.0);
+    }
+  }
+  // 玩家喺唔喺著火大廈下面（樓下 / 門口附近 22 米內）
+  const nearFire = p => !!fire && Math.hypot(p.x - fire.face.x, p.z - fire.face.z) < 22 && p.y < 6;
+  return { truck, pcar, knock, steal, giveBack, hoseSpray, nearFire, fireOn: () => !!fire, applyKnocks, update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
 }

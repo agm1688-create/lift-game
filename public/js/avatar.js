@@ -171,6 +171,11 @@ export function itemMesh(kind) {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.45, 14), std('#d50000', { roughness: 0.35 })); c.position.y = 0.225; g.add(c);
     const top = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.08, 8), std('#222')); top.position.y = 0.49; g.add(top);
     const hose = box(0.025, 0.025, 0.16, std('#111')); hose.position.set(0, 0.5, 0.08); g.add(hose);
+  } else if (kind === 'hose') {
+    // 消防喉：紅色喉管 + 銀色射嘴，沿住手臂向下（舉高手時就向前指）
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 10), std('#c62828', { roughness: 0.6 })); tube.position.y = -0.1; g.add(tube);
+    const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.035, 0.22, 10), std('#b0bec5', { metalness: 0.8, roughness: 0.25 })); noz.position.y = -0.5; g.add(noz);
+    const tail = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 8, 16, Math.PI * 1.4), std('#c62828', { roughness: 0.6 })); tail.position.set(0, 0.3, 0.12); g.add(tail);
   }
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
