@@ -95,7 +95,7 @@ export function buildEvents(scene, api) {
     const R = planRoute(from, { x: stand.x, z: stand.z }, TOWN);
     fire = { face, stand, R, s: 0, hp: 100, t: 0, helped: 0, arrived: false, spraying: false, sirenT: 0, w: r.v ? 0 : 1, dir: r.v ? Math.sign(r.L - bx) : Math.sign(r.L - bz) };
     truck.visible = true; truck.position.copy(R.pts[0]);
-    api.toast('🔥 火警！附近有大廈著火，消防車趕緊嚟！\n可以拎滅火筒去幫手救火', 5000); api.sfx.alarm(2);
+    api.toast('🔥 火警！附近有大廈著火，消防車趕緊嚟！\n可以拎滅火筒去幫手救火', 5000); api.sfx.firebell(2);
     api.say('Fire! Fire! A building is on fire. The fire engine is coming!', '火警！有大廈著火，消防車嚟緊！');
     return true;
   }

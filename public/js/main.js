@@ -850,7 +850,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (d < 300) { sfx.boom(); shake = Math.max(0.1, 1.2 - d / 60); const f = $('flash'); f.style.transition = 'none'; f.style.opacity = Math.max(0.2, 1 - d / 80); requestAnimationFrame(() => { f.style.transition = 'opacity 1.5s'; f.style.opacity = 0; }); }
     toast(`💥 ${LIFT_DEF[liftId].name} 爆炸咗！（純特效，會自動復原）`);
   }
-  function doAlarm() { world.alarm(5); if (P.pos.distanceTo(new V3(world.pillarX, 0, -9.7)) < 120) sfx.alarm(5); toast('🔔 消防鐘響！'); }
+  function doAlarm() { world.alarm(5); if (P.pos.distanceTo(new V3(world.pillarX, 0, -9.7)) < 120) sfx.firebell(5); toast('🔔 消防鐘響！'); }
   // 滅火筒噴霧（自己同其他人）
   const spN = 160, spGeo = new THREE.BufferGeometry(), spPos = new Float32Array(spN * 3), spVel = new Float32Array(spN * 3), spLife = new Float32Array(spN);
   spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));

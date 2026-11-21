@@ -62,7 +62,7 @@ export function buildHouse(scene, api) {
     { const [bx, bz] = P(4.9, D - T - 0.05); const bell = new THREE.CylinderGeometry(0.16, 0.16, 0.08, 18); bell.rotateX(Math.PI / 2); bell.translate(bx, y + 2.1, bz - 0.04); B.add(bell, red); }
     hb(4.75, D - T - 0.08, 5.05, D - T - 0.02, y + 1.3, y + 1.6, red, false);
     spot(4.9, 12.0, y, 'alarm', 1.2);
-    inter.push({ pos: at(4.9, 12.0, y), r: 1.0, label: () => '🔔 撳消防鐘（測試）', act: () => { api.sfx.alarm(2); api.toast('🔔 鈴鈴鈴！消防鐘測試中', 2500); api.say('Ring ring! This is the fire alarm. If there is a fire, go out quickly!', '鈴鈴鈴！呢個係消防鐘，有火警就要快啲離開！', { force: true }); } });
+    inter.push({ pos: at(4.9, 12.0, y), r: 1.0, label: () => '🔔 撳消防鐘（測試）', act: () => { api.sfx.firebell(2); api.toast('🔔 鈴鈴鈴！消防鐘測試中', 2500); api.say('Ring ring! This is the fire alarm. If there is a fire, go out quickly!', '鈴鈴鈴！呢個係消防鐘，有火警就要快啲離開！', { force: true }); } });
     { const [hx, hz] = P(7.3, D - T - 0.25); const reel = new THREE.CylinderGeometry(0.32, 0.32, 0.16, 20); reel.rotateX(Math.PI / 2); reel.translate(hx, y + 1.25, hz); B.add(reel, red); const hub = new THREE.CylinderGeometry(0.1, 0.1, 0.2, 12); hub.rotateX(Math.PI / 2); hub.translate(hx, y + 1.25, hz); B.add(hub, std('#fafafa')); }
     hb(7.0, D - T - 0.05, 7.6, D - T - 0.02, y + 0.8, y + 1.7, std('#b71c1c'), false);
     spot(7.3, 12.0, y, 'hose', 1.2);
