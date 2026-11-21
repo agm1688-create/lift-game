@@ -386,6 +386,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.quizCfg = () => quiz.cfg();
   api.hosing = () => P.held === 'hose' && P.spraying;
   const carjack = buildCarjack(scene, api, traffic, events);
+  stand.vehicles.concat(shuttleStand.vehicles).forEach(v => carjack.addStatic(v.o, v.kind, v.col));
   function jackInteract() {
     if (P.pass || P.transit || P.flight || P.mech || P.seat || P.camper >= 0 || P.boat || P.shuttle || P.cable || isIndoors()) return null;
     const it = carjack.interact(P.pos); if (!it) return null;
@@ -1465,12 +1466,12 @@ function startGame(myName, role = 'player', memberToken = '') {
     padM.rotation.x = -Math.PI / 2; padM.position.set(pad.x, 0.06, pad.z); scene.add(padM);
     const heli = buildAircraft('heli', '#ff6f00'); heli.position.copy(pad); heli.rotation.y = Math.PI / 2; scene.add(heli);
     const mb = buildTransitModel('minibus'); mb.position.copy(bus); scene.add(mb);
-    cols.push({ min: [bus.x - 1.1, 0, bus.z - 3], max: [bus.x + 1.1, 2.5, bus.z + 3] });
+    const mbCol = { min: [bus.x - 1.1, 0, bus.z - 3], max: [bus.x + 1.1, 2.5, bus.z + 3] }; cols.push(mbCol);
     const mkSign = (txt, bg, x, z) => { const s = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.8), new THREE.MeshBasicMaterial({ map: TXsign(txt, bg, '#fff'), side: THREE.DoubleSide })); s.position.set(x, 2.6, z); scene.add(s); const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 8), new THREE.MeshStandardMaterial({ color: '#555' })); p.position.set(x, 1.2, z - 0.02); scene.add(p); };
     mkSign('🚁 直航日出康城', '#e65100', pad.x - 11, pad.z + 6); mkSign('🚐 直通小巴：日出康城', '#2e7d32', bus.x + 3, bus.z + 5);
     inter.push({ pos: new V3(pad.x - 10, 0, pad.z), r: 5, label: () => '🚁 搭直通直升機去日出康城（$120）', act: () => shuttle('heli', 'lohas') });
     inter.push({ pos: new V3(bus.x + 2.6, 0, bus.z), r: 4, label: () => '🚐 搭直通小巴去日出康城（$12）', act: () => shuttle('minibus', 'lohas') });
-    return { interactables: inter, colliders: cols, pad, bus, heli };
+    return { interactables: inter, colliders: cols, pad, bus, heli, vehicles: [{ o: mb, kind: 'minibus', col: mbCol }] };
   }
   function shuttle(kind, to) {
     if (P.shuttle || P.transit) return toast('你已經喺車上 / 機上');
@@ -1882,7 +1883,7 @@ function startGame(myName, role = 'player', memberToken = '') {
       bikeOn = nowBike; }
     if (carjack.driving() && isIndoors()) carjack.leave();
     const jackOn = !!carjack.driving();
-    const speed = P.mech ? 16 : (bikeOn ? 22 : jackOn ? (carjack.driving().kind === 'fire' || carjack.driving().kind === 'truck' ? 20 : 24) : 7.5) * (0.7 + 0.3 * P.scale);
+    const speed = P.mech ? 16 : (bikeOn ? 22 : jackOn ? ({ fire: 20, truck: 20, bus: 18, minibus: 22 }[carjack.driving().kind] || 24) : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     if (P.mech && P.mech.dash && P.mech.dash.t > 0) { mv.x += P.mech.dash.vx; mv.z += P.mech.dash.vz; P.mech.dash.t -= dt; }
     let turn = 0;
@@ -2075,7 +2076,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     } else { fxMat.opacity = 0; fxLight.intensity = 0; }
 
     // 互動提示
-    curInter = P.seat || P.flight || P.transit || P.pass || P.boat || P.shuttle || P.cable || sky.riding() ? null : (findInteract() || passInteract() || jackInteract());
+    curInter = P.seat || P.flight || P.transit || P.pass || P.boat || P.shuttle || P.cable || sky.riding() || carjack.driving() ? null : (findInteract() || passInteract() || jackInteract());
     const lbl = P.cable ? (cabinAtStation() === P.cable.i ? '🚪 落纜車' : '⏩ 返去纜車站') : P.boat ? '⏩ 返碼頭' : P.shuttle ? '⏩ 即刻到' : sky.riding() ? (sky.docked() ? '🚪 落車' : null) : (mtr.riding() && !curInter) ? '⏩ 即刻到站' : P.transit ? '⏩ 即刻到站' : P.pass ? '🚪 落車' : P.flight ? (P.flight.ground && P.flight.speed < 3 ? '🚪 落機' : null) : P.seat ? '🚪 落車' : (carjack.driving() && !curInter) ? `🚪 落${carjack.kindName()}` : curInter ? curInter.label() : P.mech ? '👊 出拳' : (P.held ? useLabel() : (!bikeOn && peds.nearest(P.pos, P.face) ? '👊 打佢' : null));
     $('act').classList.toggle('hidden', !lbl); if (lbl && $('act').textContent !== lbl) $('act').textContent = lbl;
 
@@ -2121,7 +2122,7 @@ function startGame(myName, role = 'player', memberToken = '') {
       let dist = camDist * Math.max(1, P.scale * 0.8);
       if (P.transit) dist = Math.max(dist, { taxi: 9, minibus: 11, bus: 16 }[P.transit.t.id]); else if (P.boat) dist = Math.max(dist, 13); else if (P.cable) dist = Math.max(dist, 9); else if (P.shuttle) dist = Math.max(dist, 16); else if (sky.riding()) dist = Math.max(dist, 16); else if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, { plane: 18, heli: 16, jumbo: 80, fighter: 24 }[P.flight.kind]);
       me.visible = !P.mech && !carjack.driving();
-      if (carjack.driving()) dist = Math.max(dist, carjack.driving().kind === 'fire' ? 15 : 10);
+      if (carjack.driving()) dist = Math.max(dist, { fire: 15, bus: 16, truck: 13, minibus: 11 }[carjack.driving().kind] || 10);
       ray.set(target, dir); ray.far = dist;
       const hit = ray.intersectObjects(camBlockers, false)[0];
       if (hit) dist = Math.max(0.6, hit.distance - 0.25);

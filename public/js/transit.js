@@ -120,16 +120,17 @@ export function routeAt(R, s, out) {
 // ===== 小鎮交通總站（停住三架車，撳一下就揀目的地）=====
 export const STAND = { x: -56, z0: 26 };
 export function buildTransitStand(scene, api) {
-  const inter = [], cols = [];
+  const inter = [], cols = [], vehicles = [];
   TRANSIT.forEach((t, k) => {
     const m = buildTransitModel(t.id); const z = STAND.z0 + k * 13;
     m.position.set(STAND.x, 0, z); scene.add(m);
     const L = m.userData.len, hw = t.id === 'bus' ? 1.25 : t.id === 'minibus' ? 1.05 : 0.9;
-    cols.push({ min: [STAND.x - hw, 0, z - L / 2], max: [STAND.x + hw, t.id === 'bus' ? 4.4 : 2.2, z + L / 2] });
+    const col = { min: [STAND.x - hw, 0, z - L / 2], max: [STAND.x + hw, t.id === 'bus' ? 4.4 : 2.2, z + L / 2] }; cols.push(col);
+    vehicles.push({ o: m, kind: t.id, col });
     const s = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: TX.signTex(`${t.e} ${t.n}站`, t.id === 'taxi' ? '#c62828' : t.id === 'minibus' ? '#2e7d32' : '#1565c0', '#fff', 512, 128, 'bold 60px sans-serif') }));
     s.position.set(STAND.x + 3.2, 2.6, z); s.rotation.y = Math.PI / 2; scene.add(s); const s2 = s.clone(); s2.rotation.y = -Math.PI / 2; s2.position.x -= 0.01; scene.add(s2);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 8), std('#555')); pole.position.set(STAND.x + 3.2, 1.2, z - 0.01); scene.add(pole);
     inter.push({ pos: new V3(STAND.x + 2.4, 0, z), r: 2.6, label: () => `${t.e} 搭${t.n}（揀地圖任何位置）`, act: () => api.transitPick(t.id) });
   });
-  return { interactables: inter, colliders: cols };
+  return { interactables: inter, colliders: cols, vehicles };
 }

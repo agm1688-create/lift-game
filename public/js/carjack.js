@@ -3,16 +3,27 @@
 import * as THREE from 'three';
 import { buildCarOf } from './traffic.js';
 import { buildFireTruck, buildPoliceCar } from './events.js';
+import { buildTransitModel } from './transit.js';
 import { buildAvatar, animateAvatar } from './avatar.js';
 
 const V3 = THREE.Vector3;
-const NAME = { sedan: '私家車', taxi: '的士', van: '客貨車', truck: '貨車', police: '警車', fire: '消防車' };
+const NAME = { sedan: '私家車', taxi: '的士', van: '客貨車', truck: '貨車', police: '警車', fire: '消防車', minibus: '小巴', bus: '雙層巴士' };
 
 export function buildCarjack(scene, api, traffic, events) {
   let cur = null;            // 揸緊嘅搶來車 { kind, model, src, police }
   const parked = [];         // 落咗車之後泊喺路邊嘅車（一陣就會消失）
   const drivers = [];        // 落車走佬嘅司機
   let chase = null;          // 警察追緊你
+  const statics = [];        // 泊喺站頭嘅的士 / 小巴 / 巴士（冇司機，直接揸走）
+  function addStatic(o, kind, col) { statics.push({ o, kind, col, taken: false }); }
+  // 車身大細（本地座標，車頭向 +z），計一次就記住
+  const box = new THREE.Box3(), bsz = new V3();
+  function sizeOf(o) {
+    const u = o.userData; if (u._jL) return u;
+    const r = o.rotation.y, px = o.position.x, pz = o.position.z; o.rotation.y = 0; o.position.x = o.position.z = 0; o.updateMatrixWorld(true);
+    box.setFromObject(o).getSize(bsz); o.rotation.y = r; o.position.x = px; o.position.z = pz; o.updateMatrixWorld(true);
+    u._jL = Math.max(3, bsz.z); u._jW = Math.max(1.6, bsz.x); return u;
+  }
 
   // ---------- 搵前面 / 旁邊有冇行緊嘅車 ----------
   function candidates() {
@@ -20,17 +31,19 @@ export function buildCarjack(scene, api, traffic, events) {
     for (const c of traffic.cars) if (c.alive && !c.knock && c.m.visible) out.push({ src: 'traffic', c, o: c.m, kind: c.kind || 'sedan' });
     if (events.truck.visible && !events.truck.userData.taken) out.push({ src: 'fire', o: events.truck, kind: 'fire' });
     if (events.pcar.visible && !events.pcar.userData.taken) out.push({ src: 'police', o: events.pcar, kind: 'police' });
+    for (const st of statics) if (!st.taken && st.o.visible) out.push({ src: 'static', st, o: st.o, kind: st.kind });
+    for (const pk of parked) out.push({ src: 'parked', pk, o: pk.model, kind: pk.kind });
     return out;
   }
   function find(p) {
     if (cur || chase?.caught) return null;
     let best = null, bd = 1e9;
     for (const k of candidates()) {
-      const o = k.o, u = o.userData, L = u.L || 4.4, W = u.W || 2.2, yaw = o.rotation.y;
+      const o = k.o, u = sizeOf(o), L = u._jL, W = u._jW, yaw = o.rotation.y;
       const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = p.x - o.position.x, rz = p.z - o.position.z;
-      const along = rx * fx + rz * fz, side = Math.abs(rx * fz - rz * fx);
-      // 車頭前面 4 米之內、或者企喺車身旁邊（司機位）都得
-      if (along > -L / 2 && along < L / 2 + 4 && side < W / 2 + 1.8 && Math.abs(p.y - o.position.y) < 2.5) {
+      const along = Math.abs(rx * fx + rz * fz), side = Math.abs(rx * fz - rz * fx);
+      // 企喺車頭、車尾、兩邊 2.5 米之內都得（唔使企正司機位）
+      if (along < L / 2 + 2.5 && side < W / 2 + 2.5 && Math.abs(p.y - o.position.y) < 2.5) {
         const d = Math.hypot(rx, rz); if (d < bd) { bd = d; best = k; }
       }
     }
@@ -38,13 +51,32 @@ export function buildCarjack(scene, api, traffic, events) {
   }
   function interact(p) {
     const k = find(p); if (!k) return null;
-    return { label: () => `🦹 打劫${NAME[k.kind] || '車'}（叫司機落車，搶佢架車）`, act: () => jack(k, p) };
+    const n = NAME[k.kind] || '車';
+    return { label: () => k.src === 'parked' ? `🚗 上返架${n}揸` : k.src === 'static' ? `🚗 揸走呢架${n}` : `🦹 打劫${n}（叫司機落車，搶佢架車）`, act: () => jack(k, p) };
   }
 
   // ---------- 搶車 ----------
   function jack(k, p) {
     const o = k.o, pos = o.position.clone(), yaw = o.rotation.y;
     let model;
+    // 上返自己泊低咗嘅車
+    if (k.src === 'parked') {
+      parked.splice(parked.indexOf(k.pk), 1);
+      cur = { kind: k.pk.kind, model: o, src: k.pk.src, police: k.pk.src === 'police', st: k.pk.st, t: 0 };
+      api.teleport(pos.x, 0.05, pos.z); api.face(yaw); api.sfx.door();
+      api.toast(`🚗 上返架${NAME[k.kind] || '車'}`); return;
+    }
+    if (k.src === 'static') {
+      model = buildTransitModel(k.kind); o.visible = false; k.st.taken = true;
+      if (k.st.col) { k.st.y1 = k.st.col.max[1]; k.st.col.max[1] = -100; }   // 收埋原本位置嘅碰撞箱
+      model.position.copy(pos); model.position.y = 0; model.rotation.set(0, yaw, 0); scene.add(model);
+      cur = { kind: k.kind, model, src: 'static', st: k.st, police: false, t: 0 };
+      api.teleport(pos.x, 0.05, pos.z); api.face(yaw); api.sfx.door(); api.sfx.horn?.();
+      api.toast(`🚗 你揸走咗架${NAME[k.kind] || '車'}！
+撳「🚪 落車」就落；泊低 60 秒冇人揸就會自己返去站頭`, 4500);
+      api.say(`You are driving the ${({ taxi: 'taxi', minibus: 'minibus', bus: 'double-decker bus' })[k.kind] || 'car'}. Drive carefully!`, `你揸緊${NAME[k.kind] || '車'}，小心揸呀！`, { force: true, now: true });
+      return;
+    }
     if (k.src === 'traffic') {
       const col = '#' + (o.children[0]?.material?.color?.getHexString() || 'eceff1');
       model = buildCarOf(k.kind, col); k.c.alive = false; k.c.m.visible = false;
@@ -68,18 +100,19 @@ export function buildCarjack(scene, api, traffic, events) {
       api.say(k.src === 'fire' ? 'You took the fire engine! Use it carefully.' : 'Get out of the car, please! Now the car is yours.', k.src === 'fire' ? '你搶咗消防車！小心揸呀。' : '司機落咗車，架車俾你揸喇！', { force: true, now: true });
     }
   }
-  // 落車：架車泊喺度，30 秒後消失（消防車 / 警車還返俾事件系統）
+  // 落車：架車泊喺度，60 秒冇再上車就消失（消防車 / 警車還返俾事件系統，站頭車返返站頭）
   function leave(silent) {
     if (!cur) return;
     const c = cur; cur = null;
-    parked.push({ model: c.model, t: 30, src: c.src });
+    parked.push({ model: c.model, t: 60, src: c.src, kind: c.kind, st: c.st });
     const yaw = c.model.rotation.y, sx = Math.cos(yaw), sz = -Math.sin(yaw);
     api.teleport(c.model.position.x + sx * 2.4, 0.05, c.model.position.z + sz * 2.4);
     if (!silent) { api.sfx.door(); api.toast(`🚪 落咗${NAME[c.kind] || '車'}`); }
   }
   function release(pk) {
     scene.remove(pk.model);
-    if (pk.src === 'fire') events.giveBack(events.truck); else if (pk.src === 'police') events.giveBack(events.pcar);
+    if (pk.src === 'static' && pk.st) { pk.st.taken = false; pk.st.o.visible = true; if (pk.st.col) pk.st.col.max[1] = pk.st.y1; }
+    else if (pk.src === 'fire') events.giveBack(events.truck); else if (pk.src === 'police') events.giveBack(events.pcar);
   }
 
   // ---------- 警察追捕 ----------
@@ -148,5 +181,5 @@ export function buildCarjack(scene, api, traffic, events) {
   }
   // 坐監 / 傳送走：即刻落車，唔再追
   function reset() { if (cur) leave(true); if (chase) endChase(); }
-  return { interact, update, leave, reset, driving: () => cur, kindName: () => cur ? NAME[cur.kind] : '', chasing: () => !!chase };
+  return { interact, update, leave, reset, addStatic, driving: () => cur, kindName: () => cur ? NAME[cur.kind] : '', chasing: () => !!chase };
 }
