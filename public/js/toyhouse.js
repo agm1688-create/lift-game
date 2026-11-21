@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { Batch } from './city.js';
 import { IM, signMat, sign, exhaustFan } from './interiors.js';
+import { hoodGeo, hoodM } from './traffic.js';
 
 const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, ...e });
 // 倉庫範圍（世界座標）：入口喺 z0 嗰邊（向住廣場 / 出生點）
@@ -105,6 +106,16 @@ export function buildToyHouse(scene, api) {
     B.box(-33.2, 3.4, bz - 0.3, -31.8, 3.78, bz, std('#fafafa'), false); B.box(-33.1, 3.42, bz - 0.32, -31.9, 3.45, bz - 0.3, std('#90a4ae'), false);
     B.box(-33.0, 0, z1 + 0.1, -31.9, 0.75, z1 + 0.5, std('#eceff1'));
     spot(-32.5, bz - 1.2, 'acSplit', 1.3);
+    // 多一部分體式冷氣機室外機（壓縮機）：掛喺後牆外面嘅鐵架，有風扇網同銅喉
+    { const ax0 = -25.4, ax1 = -24.2, ay = 1.5, az = z1 + 0.12;
+      B.box(ax0 - 0.05, ay - 0.06, az, ax1 + 0.05, ay - 0.02, az + 0.55, std('#616161', { metalness: 0.6 }), false);   // 鐵架
+      B.box(ax0, ay, az + 0.05, ax1, ay + 0.78, az + 0.5, std('#eceff1'));
+      for (let k = 0; k < 6; k++) B.box(ax0 + 0.1, ay + 0.1 + k * 0.1, az + 0.5, ax0 + 0.72, ay + 0.12 + k * 0.1, az + 0.52, std('#78909c'), false);   // 風扇網
+      const fan = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), std('#455a64', { side: THREE.DoubleSide })); fan.position.set(ax0 + 0.41, ay + 0.39, az + 0.515); scene.add(fan);
+      B.box(ax1 - 0.12, ay + 0.78, az + 0.04, ax1 - 0.08, 3.6, az + 0.08, std('#b87333', { metalness: 0.7 }), false);   // 銅喉上牆
+      B.box(ax1 - 0.32, ay + 0.78, az + 0.04, ax1 - 0.28, 3.6, az + 0.08, std('#b87333', { metalness: 0.7 }), false);
+      sign(B, (ax0 + ax1) / 2 - 1.2, ay + 1.1, az - 0.08, 1.2, 0.26, signMat('壓縮機 COMPRESSOR', '#37474f', '#fff', 'bold 44px sans-serif'), '+z');
+      spot((ax0 + ax1) / 2, z1 + 1.4, 'acSplit', 1.4); }
     // 前方後圓抽氣扇
     exhaustFan(B, -29.7, 3.5, bz - 0.08, '-z', 0); }
 
@@ -116,7 +127,7 @@ export function buildToyHouse(scene, api) {
   { const tz = 15.2;
     B.box(tlx - 0.07, 0, tz - 0.07, tlx + 0.07, 3.3, tz + 0.07, std('#37474f', { metalness: 0.6 }));
     B.box(tlx - 0.25, 2.5, tz - 0.25, tlx + 0.25, 3.9, tz + 0.15, IM.black, false);
-    ['r', 'y', 'g'].forEach((k, i) => { const c = new THREE.CircleGeometry(0.17, 16); c.rotateY(Math.PI / 2); carLamps[k] = mesh(c, lampM(), tlx + 0.26, 3.6 - i * 0.45, tz - 0.05); });
+    ['r', 'y', 'g'].forEach((k, i) => { const c = new THREE.CircleGeometry(0.17, 16); c.rotateY(Math.PI / 2); carLamps[k] = mesh(c, lampM(), tlx + 0.26, 3.6 - i * 0.45, tz - 0.05); mesh(hoodGeo(0.21, 0.26).rotateY(Math.PI / 2), hoodM, tlx + 0.26, 3.6 - i * 0.45, tz - 0.05); });
     // 行人路斑馬線（地下畫幾條白線）
     for (let k = 0; k < 5; k++) B.box(x0 + 2.4 + k * 0.7, 0.025, 15.8, x0 + 2.8 + k * 0.7, 0.03, 18.6, white, false);
     sign(B, tlx + 0.2, 1.9, tz + 0.7, 1.4, 0.35, signMat('🚦 車輛交通燈', '#263238', '#fff', 'bold 54px sans-serif'), '+x');
@@ -126,6 +137,8 @@ export function buildToyHouse(scene, api) {
     B.box(tlx - 0.22, 1.7, pz - 0.25, tlx + 0.22, 2.6, pz + 0.25, IM.black, false);
     pedLamps.r = mesh(new THREE.PlaneGeometry(0.34, 0.34).rotateY(Math.PI / 2), new THREE.MeshBasicMaterial({ map: manTex('#ff2b2b', false) }), tlx + 0.23, 2.37, pz);
     pedLamps.g = mesh(new THREE.PlaneGeometry(0.34, 0.34).rotateY(Math.PI / 2), new THREE.MeshBasicMaterial({ map: manTex('#20e070', true) }), tlx + 0.23, 1.93, pz);
+    // 遮光罩
+    [2.37, 1.93].forEach(y => mesh(hoodGeo(0.22, 0.22).rotateY(Math.PI / 2), hoodM, tlx + 0.23, y, pz));
     // 行人過路掣（黃色箱）
     B.box(tlx + 0.07, 1.0, pz - 0.12, tlx + 0.25, 1.35, pz + 0.12, std('#ffd600'), false);
     sign(B, tlx + 0.2, 0.7, pz + 0.75, 1.4, 0.35, signMat('🚶 行人過路燈', '#263238', '#fff', 'bold 54px sans-serif'), '+x');

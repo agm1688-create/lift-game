@@ -37,6 +37,12 @@
   .hidden { display:none !important; }
   .sub { color:var(--mute); font-size:13px; }
   @media (max-width:600px) { main { padding:10px; } input { width:110px; } }
+  .code { font-family:ui-monospace,Consolas,monospace; background:#eef3fb; color:#1e4f9e; border-radius:6px; padding:1px 6px; font-size:12px; margin-right:6px; }
+  .tag { display:inline-block; border-radius:6px; padding:1px 7px; font-size:12px; font-weight:600; }
+  .tag.ok { background:#e6f4ea; color:#1e7e34; } .tag.bad { background:#fdecea; color:#b3261e; } .tag.pass { background:#e3f2fd; color:#1565c0; } .tag.wait { background:#fff3e0; color:#b45f06; } .tag.st { background:#f1f3f6; color:#555; }
+  td.qt { white-space:normal; min-width:220px; max-width:420px; }
+  .sumgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:8px 0; }
+  .sumgrid div { background:#f7f9fc; border:1px solid var(--line); border-radius:10px; padding:8px 10px; } .sumgrid b { display:block; font-size:20px; }
 </style>
 </head>
 <body>
@@ -97,7 +103,7 @@
     <section class="card">
       <h2>👥 會員</h2>
       <div class="tbl"><table>
-        <thead><tr><th>會員</th><th>角色</th><th>時間幣</th><th>剩餘時間</th><th>金幣</th><th>總遊戲時間</th><th>最後登入</th><th>IP 地址</th><th>操作</th></tr></thead>
+        <thead><tr><th>會員 ID / 會員名</th><th>角色</th><th>時間幣</th><th>剩餘時間</th><th>金幣</th><th>總遊戲時間</th><th>最後登入</th><th>IP 地址</th><th>操作</th></tr></thead>
         <tbody id="mBody"></tbody>
       </table></div>
       <div class="msg" id="mMsg"></div>
@@ -110,6 +116,24 @@
         <tbody id="qBody"></tbody>
       </table></div>
       <div class="msg" id="qMsg"></div>
+    </section>
+
+    <section class="card">
+      <h2>📊 會員答題報告 <span class="sub">（英文 / 數學小測、生字小測、數學堂、監獄答題：每條題目幾時答、答咗咩、答咗幾多次先啱、有冇放棄答題等 20 分鐘）</span></h2>
+      <div class="row" style="margin-bottom:8px">
+        <label>會員<select id="rMember"><option value="0">全部會員</option></select></label>
+        <label>由<input id="rFrom" type="date"></label>
+        <label>到<input id="rTo" type="date"></label>
+        <label>類別<select id="rKind"><option value="">全部</option><option value="en">📝 英文小測</option><option value="math">🧮 數學小測</option><option value="vocab">🔤 生字小測</option><option value="school">📚 數學堂</option><option value="jail">⛓ 監獄答題</option></select></label>
+        <label>結果<select id="rRes"><option value="">全部</option><option value="ok">✅ 答啱</option><option value="bad">❌ 答錯</option><option value="pass">🎉 過關</option><option value="wait20">⏰ 放棄答題等 20 分鐘</option></select></label>
+        <button class="p" id="rGo">查詢</button> <button id="rCsv">⬇ 下載 CSV（Excel 開得）</button>
+      </div>
+      <div class="sumgrid" id="rSum"></div>
+      <div class="tbl"><table>
+        <thead><tr><th>日期</th><th>時間</th><th>會員 ID</th><th>會員名</th><th>類別</th><th>題目</th><th>正確答案</th><th>佢揀 / 答</th><th>答咗幾多次先啱</th><th>結果</th></tr></thead>
+        <tbody id="rBody"><tr><td colspan="10" class="sub">撳「查詢」睇報告</td></tr></tbody>
+      </table></div>
+      <div class="msg" id="rMsg"></div>
     </section>
 
     <section class="card">
@@ -147,6 +171,7 @@ async function refresh(first) {
   if (!token) return;
   try { data = await call('api/admin/state'); } catch { return; }
   if (data.err) return;
+  fillMembers();
   $('storeWarn').classList.toggle('hidden', data.storage === 'database');
   const on = data.members.filter(m => m.online).length;
   $('helpCount').textContent = data.helps.length ? `（${data.helps.length} 個等緊）` : '';
@@ -159,7 +184,7 @@ async function refresh(first) {
   $('status').textContent = `${data.members.length} 個會員｜${data.apps.length} 個申請｜${on} 個喺線｜儲存：${data.storage === 'database' ? '資料庫' : '暫存'}`;
   if (first || ![$('sMin'), $('sQuiz'), $('sEx'), $('sApC')].includes(document.activeElement)) { $('sMin').value = data.settings.minPerCoin; $('sQuiz').value = data.settings.goldPerQuiz; $('sEx').value = data.settings.goldPerTimeCoin; $('sApC').value = data.settings.applyCoins; $('sApO').checked = !!data.settings.applyOpen; }
   $('mBody').innerHTML = data.members.length ? data.members.map(m => `<tr>
-    <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><b>${esc(m.name)}</b>${m.pg ? ' <span class="sub" title="28 遊樂場帳戶：金幣同大廳共用">🎮28</span>' : ''}</td>
+    <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><span class="code">${esc(m.code || '')}</span><b>${esc(m.name)}</b>${m.pg ? ' <span class="sub" title="28 遊樂場帳戶：金幣同大廳共用">🎮28</span>' : ''}</td>
     <td><select data-role="${m.id}">${[['player', '👦 普通玩家'], ['noquiz', '⭐ 免小測'], ['admin', '👑 管理員']].map(([k, t]) => `<option value="${k}"${m.role === k ? ' selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
     <td class="num">${fmtD(m.timeLeft)}</td>
@@ -231,6 +256,56 @@ $('mBody').onclick = async e => {
   let pin; if (op === 'pin') { pin = prompt(`輸入「${m.name}」嘅新密碼（4–8 個數字）`); if (pin == null) return; }
   act({ op, id, n: b.dataset.n, pin }, $('mMsg'));
 };
+// ---------- 答題報告 ----------
+const KIND_N = { en: '📝 英文小測', math: '🧮 數學小測', vocab: '🔤 生字小測', school: '📚 數學堂', jail: '⛓ 監獄答題' };
+let rRows = [];
+const hk = t => new Date(t).toLocaleString('en-CA', { timeZone: 'Asia/Hong_Kong', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', '');
+const dayStart = v => v ? new Date(v + 'T00:00:00+08:00').getTime() : 0;
+function resOf(r) {
+  if (r.ev === 'pass') return ['pass', '🎉 過關' + (r.n ? `（共答 ${r.n} 條）` : '')];
+  if (r.ev === 'wait20') return ['wait', '⏰ 放棄答題，等 20 分鐘'];
+  if (r.ev === 'start') return ['st', '🔔 開始上堂'];
+  return r.ok ? ['ok', r.tries > 1 ? `✅ 第 ${r.tries} 次先答啱` : '✅ 一次答啱'] : ['bad', '❌ 答錯（換過另一條）'];
+}
+function fillMembers() {
+  const sel = $('rMember'), cur = sel.value;
+  sel.innerHTML = '<option value="0">全部會員</option>' + (data ? data.members.map(m => `<option value="${m.id}">${esc(m.code || '')} ${esc(m.name)}</option>`).join('') : '');
+  sel.value = cur || '0';
+}
+function filtered() {
+  const k = $('rKind').value, res = $('rRes').value;
+  return rRows.filter(r => (!k || r.kind === k) && (!res || (res === 'ok' ? r.ev === 'q' && r.ok : res === 'bad' ? r.ev === 'q' && !r.ok : res === 'pass' ? r.ev === 'pass' : r.ev === 'wait20')));
+}
+function renderReport() {
+  const list = filtered(), qs = list.filter(r => r.ev === 'q');
+  const first = qs.filter(r => r.ok && r.tries <= 1).length, okAll = qs.filter(r => r.ok).length;
+  const days = new Set(list.map(r => hk(r.at).slice(0, 10)));
+  $('rSum').innerHTML = [
+    ['答咗幾多條題目', qs.length], ['答啱', okAll], ['一次就答啱', first], ['答錯', qs.length - okAll],
+    ['正確率', qs.length ? Math.round(okAll / qs.length * 100) + '%' : '—'], ['過關次數', list.filter(r => r.ev === 'pass').length],
+    ['放棄答題等 20 分鐘', list.filter(r => r.ev === 'wait20').length], ['有答題嘅日數', days.size],
+  ].map(([t, v]) => `<div><span class="sub">${t}</span><b>${v}</b></div>`).join('');
+  $('rBody').innerHTML = list.length ? list.slice(0, 1500).map(r => { const [c, t] = resOf(r); const d = hk(r.at); return `<tr>
+    <td class="num">${d.slice(0, 10)}</td><td class="num">${d.slice(11)}</td><td><span class="code">${esc(r.code)}</span></td><td><b>${esc(r.name)}</b></td>
+    <td>${KIND_N[r.kind] || esc(r.kind)}</td><td class="qt">${esc(r.q)}</td><td>${esc(r.ans) || '—'}</td><td>${esc(r.pick) || '—'}</td>
+    <td class="num">${r.ev === 'q' ? (r.ok ? r.tries || 1 : '未答啱') : '—'}</td><td><span class="tag ${c}">${t}</span></td></tr>`; }).join('') : '<tr><td colspan="10" class="sub">冇紀錄</td></tr>';
+}
+async function loadReport() {
+  const to = $('rTo').value;
+  const r = await call('api/admin/quizlog', { mid: +$('rMember').value, from: dayStart($('rFrom').value), to: to ? dayStart(to) + 86400e3 : 0 });
+  if (r.err) return msg($('rMsg'), r.err);
+  rRows = r.rows || []; renderReport();
+  msg($('rMsg'), r.total > rRows.length ? `共 ${r.total} 條紀錄，顯示最新 ${rRows.length} 條；揀會員 / 日子可以睇得仔細啲` : `共 ${rRows.length} 條紀錄`, true);
+}
+$('rGo').onclick = () => loadReport();
+$('rKind').onchange = $('rRes').onchange = () => renderReport();
+$('rCsv').onclick = () => {
+  const head = ['日期', '時間', '會員ID', '會員名', '類別', '題目', '正確答案', '佢揀/答', '答咗幾多次先啱', '結果'];
+  const lines = filtered().map(r => { const d = hk(r.at); return [d.slice(0, 10), d.slice(11), r.code, r.name, (KIND_N[r.kind] || r.kind).replace(/^\S+ /, ''), r.q, r.ans, r.pick, r.ev === 'q' ? (r.ok ? r.tries || 1 : '未答啱') : '', resOf(r)[1]]; });
+  const csv = '\ufeff' + [head, ...lines].map(a => a.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `答題報告_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+};
+
 if (token) show();
 setInterval(() => { if (token && !document.hidden) refresh(); }, 10000);
 </script>

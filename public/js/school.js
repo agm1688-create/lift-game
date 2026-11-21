@@ -126,9 +126,11 @@ export function buildSchool(scene, api) {
     if (k === 'ok') {
       if (input === '') return render('先輸入答案啦 ✏️', false);
       const q = L.q;
+      L.n = (L.n || 0) + 1;
+      api.qlog?.({ kind: 'school', ev: 'q', q: `${q.a} ${q.op} ${q.b} = ?`, ans: String(q.ans), pick: input, tries: 1, ok: +input === q.ans ? 1 : 0 });
       if (+input === q.ans) {
         L.correct++; api.sfx.pickup();
-        if (L.correct >= NEED) { save(); api.say?.('Excellent! You got them all right. Class is over. Goodbye!', '好叻！全部答啱，落堂喇，拜拜！', { force: true }); return finish(true); }
+        if (L.correct >= NEED) { api.qlog?.({ kind: 'school', ev: 'pass', n: L.n, q: `數學堂答啱 ${NEED} 條，落堂` }); save(); api.say?.('Excellent! You got them all right. Class is over. Goodbye!', '好叻！全部答啱，落堂喇，拜拜！', { force: true }); return finish(true); }
         L.q = makeQuestion(L.op); input = ''; save(); drawBoard(`${L.q.a} ${L.q.op} ${L.q.b} = ?`);
         api.say?.(`Well done! That is correct. Next question: ${qEn(L.q)}`, `啱咗，好叻！下一條：${L.q.a} ${L.q.op} ${L.q.b}`, { force: true });
         return render(`✅ 啱咗！${q.a} ${q.op} ${q.b} = ${q.ans}。再答多 ${NEED - L.correct} 條！`, true);
@@ -150,13 +152,15 @@ export function buildSchool(scene, api) {
   function start() {
     if (S.lesson) return;
     const back = api.prepare();                     // 落車 / 落機，記低而家位置
-    S.lesson = { start: Date.now(), back, op: null, correct: 0, q: null }; S.played = 0; save();
+    S.lesson = { start: Date.now(), back, op: null, correct: 0, q: null, n: 0 }; S.played = 0; save();
+    api.qlog?.({ kind: 'school', ev: 'start', q: '上數學堂' });
     api.sfx.ding(); api.toast('🔔 叮噹～上課時間！', 3000);
     api.say?.('Ding dong! Good morning, class! It is time for maths. Do you want to do addition or subtraction?', '叮噹！同學早晨！上數學堂喇，想做加數定減數？', { force: true });
     api.blackout(() => { api.teleport(X - 2.4, 0.05, Z + 0.8); api.face(Math.PI); drawBoard('上課啦！揀加數定減數？'); render(); }, 900);
   }
   function finish(passed) {
     const L = S.lesson; if (!L) return;
+    if (!passed) api.qlog?.({ kind: 'school', ev: 'wait20', n: L.n || 0, q: (L.n ? `答咗 ${L.n} 條（啱 ${L.correct} 條）之後` : '冇答題，') + '放棄答題，等夠 20 分鐘' });
     const back = L.back; S.lesson = null; S.played = 0; warned = false; save();
     modal.style.display = 'none'; drawBoard('落堂啦！👋');
     api.blackout(() => { api.teleport(back[0], back[1], back[2]); api.toast(passed ? '🎉 答啱晒！落堂啦，返到頭先嘅位置繼續玩 👋' : '⏰ 等夠 20 分鐘，可以返去玩喇', 3500); }, 900);

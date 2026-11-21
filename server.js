@@ -28,6 +28,7 @@ async function api(req, res, p) {
   if (p === '/api/sso') return json(res, 200, await ACC.ssoLogin(b.token, !!b.peek, ip));
   if (p === '/api/admin/login') return json(res, 200, ACC.adminLogin(b.pw, ip));
   if (!ACC.isAdmin(req.headers['x-admin'])) return json(res, 401, { err: '請重新登入管理員' });
+  if (p === '/api/admin/quizlog') return json(res, 200, ACC.quizReport(b));
   if (p === '/api/admin/state') { const on = new Set(); for (const [, pl] of players) if (pl.link) on.add(pl.link.m.id); return json(res, 200, ACC.adminState(on)); }
   if (p === '/api/admin/action') {
     const r = await ACC.adminAction(b);
@@ -165,6 +166,7 @@ wss.on('connection', (ws, req) => {
       case 'ping': send(ws, { t: 'pong', c: m.c, now }); break;
       case 'beat': if (me) me.beat = now; break;
       case 'quizOK': if (me && me.link) ACC.quizOK(me.link).then(a => { if (a) send(ws, { t: 'acct', acct: a }); }); break;
+      case 'qlog': if (me && me.link) ACC.quizLog(me.link, m.e); break;
       case 'exchange': if (me && me.link) ACC.exchange(me.link).then(r => send(ws, r.err ? { t: 'acctErr', err: r.err } : { t: 'acct', acct: r.acct, timeup: r.acct.timeLeft <= 0 })); break;
       case 'lift': {
         const L = lifts[m.id]; if (!L || !me) break;

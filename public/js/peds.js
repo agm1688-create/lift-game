@@ -8,7 +8,7 @@ import { inExcl, segOK } from './traffic.js';
 const V3 = THREE.Vector3;
 const lineOf = v => Math.round((v + 100) / CHUNK) * CHUNK - 100;
 const TOWN_SPOTS = [[-12, 6], [12, 6], [-6, 1], [6, -3], [-15, -6], [15, -8], [2, 4], [-27, 12], [18, 14], [25, 2], [-10, -2], [10, 10], [-25, 8], [28, 22], [8, 24]];
-const SAY_HIT = [['Ouch! Hey, why did you hit me?', '哎呀！你做咩打我？'], ['Ow! That hurts! Come back here!', '好痛呀！你咪走！'], ['Hey! Stop that! You are so rude!', '喂！停手！你好冇禮貌！']];
+const SAY_HIT = [['Ouch! Hey, why did you hit me?', '哎呀！你做咩打我？'], ['Ow! That hurts! Please do not hit people.', '好痛呀！唔好打人呀！'], ['Hey! Stop that! You are so rude!', '喂！停手！你好冇禮貌！']];
 const rand = (a, b) => a + Math.random() * (b - a);
 
 function angryTex() {
@@ -64,7 +64,7 @@ export function buildPeds(scene, api) {
     d.av.rotation.set(0, Math.atan2(-away.x, -away.z), 0);
     const [en, zh] = SAY_HIT[Math.floor(Math.random() * SAY_HIT.length)];
     api.say(en, zh, { force: true, now: true });
-    api.toast('👊 打中咗！個路人好嬲，佢起身會追住你打，快啲走！🏃', 3000);
+    api.toast('👊 打中咗！個路人跌咗落地，佢唔會還手，起身就會行開。打人係唔啱㗎！', 3000);
     return true;
   }
   const tmp = new V3();
@@ -79,7 +79,12 @@ export function buildPeds(scene, api) {
       if (d.st === 'down') {
         d.t -= dt; d.pos.addScaledVector(d.vel, dt); d.vel.multiplyScalar(Math.max(0, 1 - dt * 4));
         animateAvatar(d.av, 0, dt); d.av.rotation.x = -Math.min(Math.PI / 2, (2.4 - d.t) * 6) * (d.t > 0.4 ? 1 : d.t / 0.4);
-        if (d.t <= 0) { d.st = 'angry'; d.av.rotation.x = 0; api.say('Come back here! I will get you!', '你咪走！我捉到你就知死！', { force: true }); }
+        if (d.t <= 0) {
+          // 唔還手：起身之後嬲嬲哋行開（頭頂個嬲嬲符號顯示幾秒）
+          d.st = 'walk'; d.av.rotation.x = 0; d.goal = null; d.walked = -40; d.angryT = 0; d.mark.visible = true; d.markT = 4;
+          tmp.set(d.pos.x - p.x, 0, d.pos.z - p.z); const L = tmp.length() || 1; d.dir.set(tmp.x / L, 0, tmp.z / L);
+          api.say('Humph! I am going away. Please be nice to people.', '哼！我走喇。對人要有禮貌呀！', { force: true });
+        }
       } else if (d.st === 'angry') {
         d.angryT -= dt; d.hitCd -= dt;
         tmp.set(p.x - d.pos.x, 0, p.z - d.pos.z); const L = tmp.length();
@@ -105,6 +110,7 @@ export function buildPeds(scene, api) {
         d.pos.addScaledVector(d.dir, 1.4 * dt); d.walked = (d.walked || 0) + 1.4 * dt;
         if (!d.goal && d.walked > rand(50, 90)) { d.dir.negate(); d.walked = 0; }
         d.av.rotation.y = Math.atan2(d.dir.x, d.dir.z); animateAvatar(d.av, 1, dt, 0.5);
+        if (d.markT > 0) { d.markT -= dt; d.mark.visible = d.markT > 0; d.mark.position.set(d.pos.x, d.pos.y + 2.4, d.pos.z); }
       }
       d.av.position.copy(d.pos);
     }

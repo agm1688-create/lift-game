@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TX from './textures.js';
 import { goldMat, buildAvatar, animateAvatar, SKINS, SHIRTS } from './avatar.js';
 import { doorOpenness } from './lifts.js';
+import { exhaustFan, FAN_SPOTS } from './interiors.js';
 
 export const HOTEL = { x: 55, z: -125, floors: 20, fh: 4 };
 const HX = HOTEL.x, HZ = HOTEL.z, FH = 4, NF = 20, CEIL = FH - 0.3;
@@ -218,6 +219,37 @@ function liftCore(B) {
   ceilingLights(B, [[0, -4.2, 2, 0.6]]);
 }
 
+// ---------- 每間房：廁所前方後圓抽氣扇、分體式冷氣機（室內機 + 室外機）、窗口式冷氣機 ----------
+const ROOM_LEARN = [];   // 本地座標 [x, z, key]，之後每層都加一個學英文位
+const acM = { white: std('#f5f5f5', { roughness: 0.4 }), grey: std('#90a4ae'), outdoor: std('#eceff1'), fan: std('#455a64'), copper: std('#b87333', { metalness: 0.7, roughness: 0.3 }) };
+function roomFixtures(B, x0, x1, side, D = 13.7) {
+  const Z = v => side * (2.1 + v), W = x1 - x0;
+  // 廁所抽氣扇：喺浴室左邊牆高位，向浴室入面
+  const fb = { add: (g, m) => B.geo(g, m) };
+  const fz = Z(2.3);
+  exhaustFan(fb, x0 + 3.18, 2.55, fz, '+x', 0); FAN_SPOTS.pop();
+  ROOM_LEARN.push([x0 + 4.4, fz, 'fan']);
+  // 分體式冷氣機室內機：喺電視上面（房左邊牆高位）
+  const bv = 8.3, sx = x0 + 0.12;
+  B.box(sx, 2.75, Z(bv - 0.65), sx + 0.26, 3.1, Z(bv + 0.65), acM.white, false);
+  B.box(sx + 0.26, 2.78, Z(bv - 0.6), sx + 0.28, 2.84, Z(bv + 0.6), acM.grey, false);   // 出風口
+  B.box(sx, 3.1, Z(bv + 0.55), sx + 0.06, CEIL, Z(bv + 0.62), acM.copper, false);      // 銅喉上天花
+  ROOM_LEARN.push([x0 + 1.6, Z(bv), 'acSplit']);
+  // 窗口式冷氣機：穿過窗口玻璃（喺兩條金色直條中間）
+  const mid = (x0 + x1) / 2;
+  let ax = Math.floor((x0 + W * 0.72) / 4) * 4 + 2; if (ax + 0.5 > x1 - 0.4) ax -= 4; if (ax - 0.5 < x0 + 0.4) ax += 4;
+  B.box(ax - 0.42, 0.95, Z(D - 0.45), ax + 0.42, 1.55, Z(D + 0.55), acM.white);
+  for (let k = 0; k < 5; k++) B.box(ax - 0.36, 1.02 + k * 0.1, Z(D - 0.47), ax + 0.36, 1.04 + k * 0.1, Z(D - 0.45), acM.grey, false);
+  ROOM_LEARN.push([ax, Z(D - 1.3), 'acWindow']);
+  // 分體式室外機（壓縮機）：掛喺窗外鐵架
+  let ox = ax + (ax > mid ? -4 : 4); if (ox - 0.5 < x0 + 0.3 || ox + 0.5 > x1 - 0.3) ox = ax + (ax > mid ? 4 : -4);
+  if (ox - 0.5 > x0 + 0.3 && ox + 0.5 < x1 - 0.3) {
+    B.box(ox - 0.5, 0.0, Z(D + 0.32), ox + 0.5, 0.05, Z(D + 0.95), acM.grey, false);
+    B.box(ox - 0.45, 0.05, Z(D + 0.36), ox + 0.45, 0.7, Z(D + 0.9), acM.outdoor, false);
+    B.cyl(ox - 0.1, 0.1, Z(D + 0.91), 0.25, 0.25, 0.02, acM.fan, 16);
+  }
+}
+
 // ---------- 客房 ----------
 const beds = { tmpl: [], suite: [] };
 function room(B, x0, x1, side, type) {
@@ -225,8 +257,9 @@ function room(B, x0, x1, side, type) {
   const bx = (a0, y0, v0, a1, y1, v1, mat, col = true) => B.box(x0 + a0, y0, Z(v0), x0 + a1, y1, Z(v1), mat, col);
   // 地氈
   B.plane(x0 + 0.1, Math.min(Z(0), Z(D)), x1 - 0.1, Math.max(Z(0), Z(D)), 0.012, M.carpet, 3);
-  // 門（打開咗）
-  bx(1.2, 0, 0.05, 1.25, 2.3, 1.1, M.wood, false);
+  // 門：喺 buildHotel 入面（要撳開門）；呢度加門框
+  bx(1.1, 0, -0.26, 1.2, 2.4, 0.02, M.dark, false); bx(2.4, 0, -0.26, 2.5, 2.4, 0.02, M.dark, false); bx(1.1, 2.3, -0.26, 2.5, 2.4, 0.02, M.dark, false);
+  roomFixtures(B, x0, x1, side, D);
   // 浴室
   wallX(B, x0 + 3.0, Math.min(Z(0), Z(4.6)), Math.max(Z(0), Z(4.6)), [], M.wall);
   wallX(B, x0 + 8.0, Math.min(Z(0), Z(4.6)), Math.max(Z(0), Z(4.6)), [], M.wall);
@@ -408,6 +441,74 @@ export function buildHotel(scene, api) {
 
   // ===== 互動：Check-in、瞓覺 =====
   inter(-19, 0, 0.9, 2.2, () => '🛎 Check-in 入住', () => api.hotelCheckin());
+  // ===== 客房門：要撳「開門」先入得；只喺你身處嗰層擺門（慳資源），開關狀態每層每間記住 =====
+  // 門：{ x0, x1, z, side, dir(+1 = 鉸喺 x0 / -1 = 鉸喺 x1), no }
+  const doorsOf = f => f === 20
+    ? [{ x0: -10, x1: -8.5, z: 2, side: 1, dir: 1, no: 2001, key: 's1' }, { x0: -8.5, x1: -7, z: 2, side: 1, dir: -1, no: 2001, key: 's2' }]
+      .concat(ROOMS.map((r, k) => ({ r, k })).filter(o => o.r[2] < 0).map(o => ({ x0: o.r[0] + 1.2, x1: o.r[0] + 2.4, z: -2, side: -1, dir: 1, no: 2000 + o.k + 1, key: 'r' + o.k })))
+    : ROOMS.map((r, k) => ({ x0: r[0] + 1.2, x1: r[0] + 2.4, z: r[2] * 2, side: r[2], dir: 1, no: f * 100 + k + 1, key: 'r' + k }));
+  const doorState = new Map();   // 'f:key' → { open, a, t }
+  const dState = (f, d) => { const k = f + ':' + d.key; let s = doorState.get(k); if (!s) { s = { open: 0, a: 0, t: 0 }; doorState.set(k, s); } return s; };
+  const doorWood = std('#7b4a2b', { roughness: 0.6 }), doorGold = goldMat;
+  const doorPool = [];
+  for (let i = 0; i < 9; i++) {
+    const piv = new THREE.Group(); piv.visible = false; root.add(piv);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1, 2.28, 0.06), doorWood); leaf.position.y = 1.14; piv.add(leaf);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), doorGold); piv.add(knob);
+    const knob2 = knob.clone(); piv.add(knob2);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.16), new THREE.MeshBasicMaterial({ color: '#fff' })); piv.add(plate);
+    const plate2 = plate.clone(); plate2.material = plate.material.clone(); piv.add(plate2);
+    const it = inter(0, -999, 0, 1.7, () => { const D = doorPool[i].d; if (!D) return ''; const s = dState(pf, D); return s.open ? `🚪 閂門（${D.no} 號房）` : `🚪 開門（${D.no} 號房）`; },
+      () => { const D = doorPool[i].d; if (!D) return; const s = dState(pf, D); s.open = s.open ? 0 : 1; s.t = performance.now(); api.sfx?.door?.();
+        if (D.no === 2001) { const o = doorPool.find(p => p !== doorPool[i] && p.d && p.d.no === 2001); if (o) dState(pf, o.d).open = s.open; } },
+      () => !!doorPool[i].d);
+    doorPool.push({ piv, leaf, knob, knob2, plate, plate2, it, d: null, no: 0 });
+  }
+  const plateTex = new Map();
+  const plateMat = no => { if (!plateTex.has(no)) plateTex.set(no, signMat(String(no), '#5a1a0e', '#ffd77a', 256, 128, 'bold 90px serif')); return plateTex.get(no); };
+  let doorFloor = -1;
+  function updateDoors(dt, player) {
+    const show = inside(player) && pf >= 2, fy = hotelFloorY(pf);
+    if (!show) { if (doorFloor !== -1) { doorPool.forEach(p => { p.piv.visible = false; p.d = null; }); doorFloor = -1; } }
+    else if (doorFloor !== pf) {
+      doorFloor = pf; const list = doorsOf(pf);
+      doorPool.forEach((p, i) => {
+        const D = list[i]; p.d = D || null; p.piv.visible = !!D; if (!D) return;
+        const w = D.x1 - D.x0;
+        p.piv.position.set(D.dir > 0 ? D.x0 : D.x1, fy, D.z);
+        p.leaf.scale.x = w; p.leaf.position.x = D.dir * w / 2;
+        p.knob.position.set(D.dir * (w - 0.1), 1.0, 0.06); p.knob2.position.set(D.dir * (w - 0.1), 1.0, -0.06);
+        p.plate.material = p.plate2.material = plateMat(D.no);
+        p.plate.position.set(D.dir * w / 2, 1.75, -D.side * 0.035); p.plate.rotation.y = D.side > 0 ? Math.PI : 0;
+        p.plate2.position.set(D.dir * w / 2, 1.75, D.side * 0.035); p.plate2.rotation.y = D.side > 0 ? 0 : Math.PI;
+        p.it.pos.set(HX + (D.x0 + D.x1) / 2, fy, HZ + D.z);
+      });
+    }
+    const now = performance.now();
+    for (const [k, s] of doorState) {
+      // 開咗冇人行過 25 秒就自動閂返
+      if (s.open && now - s.t > 25000) {
+        const [f] = k.split(':'); const p = doorPool.find(q => q.d && doorFloor === +f && dState(+f, q.d) === s);
+        const near = p && Math.hypot(player.x - p.it.pos.x, player.z - p.it.pos.z) < 3 && Math.abs(player.y - p.it.pos.y) < 2;
+        if (near) s.t = now; else s.open = 0;
+      }
+      s.a += (s.open - s.a) * Math.min(1, dt * 6);
+    }
+    if (doorFloor > 0) doorPool.forEach(p => { if (!p.d) return; const s = dState(pf, p.d); p.piv.rotation.y = -p.d.side * p.d.dir * s.a * Math.PI / 2; });
+  }
+  function doorColliders() {
+    const out = []; if (doorFloor < 2) return out; const fy = hotelFloorY(doorFloor);
+    for (const p of doorPool) { const D = p.d; if (!D || dState(doorFloor, D).a > 0.5) continue; out.push({ min: [HX + D.x0, fy, HZ + D.z - 0.12], max: [HX + D.x1, fy + 2.3, HZ + D.z + 0.12] }); }
+    return out;
+  }
+  // 每層每間房嘅學英文位（抽氣扇、分體式、窗口式冷氣機）
+  const learnSpots = [];
+  const seenL = new Set();
+  for (let f = 2; f <= NF; f++) for (const [x, z, key] of ROOM_LEARN) {
+    if (f === 20 && z > 0) continue;   // 20 樓前面係總統套房
+    const id = `${f}:${x}:${z}:${key}`; if (seenL.has(id)) continue; seenL.add(id);
+    learnSpots.push({ x: HX + x, y: hotelFloorY(f), z: HZ + z, r: key === 'fan' ? 1.6 : 2.2, key });
+  }
   const sleepIt = inter(0, -999, 0, 2.6, () => '😴 瞓一覺', () => api.sleep(), () => sleepIt._ok);
 
   // ===== 大堂排隊 Check-in 嘅人 =====
@@ -435,6 +536,7 @@ export function buildHotel(scene, api) {
 
   function update(dt, T, player) {
     pf = playerFloor(player);
+    updateDoors(dt, player);
     const fy = hotelFloorY(pf);
     hideLanding(pf);
     for (const c of cars) {
@@ -474,7 +576,7 @@ export function buildHotel(scene, api) {
 
   // 動態碰撞：車廂地台（可以企住跟住升降）、車頂、車門、呢層嘅外門
   function dynamicColliders(player) {
-    const out = [], fy = hotelFloorY(pf);
+    const out = doorColliders(), fy = hotelFloorY(pf);
     for (const c of cars) {
       const x0 = HX + c.x - CAR_HW, x1 = HX + c.x + CAR_HW, z0 = HZ + CAR_Z0, z1 = HZ + CAR_Z1;
       out.push({ min: [x0, c.y - 0.25, z0], max: [x1, c.y, z1 + 0.22], mv: c });
@@ -490,7 +592,7 @@ export function buildHotel(scene, api) {
     return null;
   }
 
-  return { colliders, interactables, update, dynamicColliders, insideCar, setState, cars, carById, playerFloor, inside, root };
+  return { colliders, interactables, update, dynamicColliders, insideCar, setState, cars, carById, playerFloor, inside, root, learnSpots };
 }
 
 // ---------- 總統套房（20 樓前面成排）----------

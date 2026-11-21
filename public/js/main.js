@@ -303,7 +303,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.loadCity = () => city.loadAll(P.pos);
   api.blocked = () => timeLocked || jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
   const liftFix = buildLiftFix({ store, sfx, say });
-  const quiz = buildQuiz({ store, sfx, say, onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
+  const quiz = buildQuiz({ store, sfx, say, qlog: e => api.qlog(e), onQuizOK: () => api.onQuizOK?.(), onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
   if (role === 'admin') { quiz.state.mode = null; quiz.state.q = null; setTimeout(() => toast('🔑 管理員登入：唔使做小測', 3500), 800); }
   else setTimeout(() => quiz.resume(), 0);
   api.boatTicket = () => boatTicket();
@@ -354,6 +354,8 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (a.timeLeft > 120) acctShow._warned = false;
   }
   api.onQuizOK = () => { if (memberToken) net.send({ t: 'quizOK' }); };
+  // 答題報告：每條題目都send去伺服器記低（只係會員先記）
+  api.qlog = e => { if (memberToken) net.send({ t: 'qlog', e }); };
   const quizHint = document.createElement('div'); quizHint.style.cssText = 'position:absolute;left:calc(10px + env(safe-area-inset-left));bottom:calc(172px + env(safe-area-inset-bottom));background:rgba(0,0,0,.45);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;pointer-events:none'; $('hud').appendChild(quizHint);
   const acDisplay = buildACDisplay();
   api.machineRoom = (name, backFn) => { leaveAll(); liftRoom.enter(name, backFn); };
@@ -1594,6 +1596,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     const kindOf = l => /巨無霸/.test(l) ? 'jumbo' : /戰鬥機/.test(l) ? 'fighter' : /直升機/.test(l) ? 'heli' : /飛機/.test(l) ? 'plane' : /的士/.test(l) ? 'taxi' : /小巴/.test(l) ? 'minibus' : /巴士/.test(l) ? 'bus' : null;
     airport.interactables.concat(stand.interactables, shuttleStand.interactables, lohas.interactables).forEach(it => { const k = kindOf(it.label()); if (k) learnSpots.push({ x: it.pos.x, y: it.pos.y, z: it.pos.z, r: k === 'jumbo' ? 16 : 7, key: k }); });
     acDisplay.spots.forEach(a => learnSpots.push({ ...a, y: 0, r: 3.2 }));
+    hotel.learnSpots.forEach(a => learnSpots.push(a));
     learnSpots.push({ x: river.pier.x, y: 0, z: river.pier.z - 6, r: 9, key: 'boat' });
     learnSpots.push({ x: world.cable.plat.x, y: world.cable.plat.y, z: world.cable.plat.z, r: 8, key: 'cable' }, { x: world.cable.ground.x, y: 0, z: world.cable.ground.z, r: 4, key: 'cable' });
     learnSpots.push({ x: -186, y: 0, z: 9, r: 6, key: 'wheel' }, { x: arena.base.x, y: 0, z: arena.base.z, r: 8, key: 'mech' });

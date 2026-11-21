@@ -41,9 +41,11 @@ async function load() {
   S.settings = Object.assign({ ...DEF }, S.settings); S.apps = S.apps || []; S.nextAid = S.nextAid || 1; S.helps = S.helps || []; S.nextHid = S.nextHid || 1;
   if (S.apps.length) dirty = true;
   for (const a of S.apps.splice(0)) if (!byName(a.name)) S.members.push({ id: S.nextId++, name: a.name, pin: a.pin, timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: 0, totalSec: 0, created: Date.now(), lastIp: a.ip });
-  console.log(`會員系統：${S.members.length} 個會員（儲存：${storage()}）`);
+  await loadQlog();
+  console.log(`會員系統：${S.members.length} 個會員，${QL.length} 條答題紀錄（儲存：${storage()}）`);
 }
 async function flush() {
+  await flushQlog();
   if (!dirty) return; dirty = false;
   const json = JSON.stringify(S);
   try {
@@ -53,6 +55,43 @@ async function flush() {
 }
 const touch = () => { dirty = true; };
 setInterval(flush, 3000);
+
+// ---------- 答題報告：每位會員每條題目嘅紀錄（另外一份儲存，唔會拖慢會員資料）----------
+const QFILE = path.join(__dirname, 'data', 'quizlog.json');
+const MAX_QLOG = 50000;
+let QL = [], qDirty = false;
+async function loadQlog() {
+  try {
+    if (pool) { const r = await pool.query("SELECT v FROM lift_kv WHERE k = 'quizlog'"); if (r.rows[0] && Array.isArray(r.rows[0].v)) QL = r.rows[0].v; }
+    else if (fs.existsSync(QFILE)) QL = JSON.parse(fs.readFileSync(QFILE, 'utf8')) || [];
+  } catch (e) { console.error('答題報告讀唔到', e.message); QL = []; }
+}
+async function flushQlog() {
+  if (!qDirty) return; qDirty = false;
+  const json = JSON.stringify(QL);
+  try {
+    if (pool) await pool.query("INSERT INTO lift_kv (k, v) VALUES ('quizlog', $1) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", [json]);
+    else { fs.mkdirSync(path.dirname(QFILE), { recursive: true }); fs.writeFileSync(QFILE, json); }
+  } catch (e) { qDirty = true; console.error('儲存答題報告失敗', e.message); }
+}
+setInterval(flushQlog, 10000);
+const memberCode = id => 'M' + String(id).padStart(4, '0');
+const KINDS = ['en', 'math', 'vocab', 'school', 'jail'];
+const EVS = ['q', 'pass', 'wait20', 'start'];
+const cut = (v, n) => String(v == null ? '' : v).replace(/<[^>]*>/g, '').slice(0, n);
+// 遊戲傳嚟一條紀錄：{ kind, ev, q, ans, pick, tries, ok, n }
+function quizLog(link, e) {
+  const m = link && byId(link.m.id); if (!m || !e || typeof e !== 'object') return;
+  const kind = KINDS.includes(e.kind) ? e.kind : 'en', ev = EVS.includes(e.ev) ? e.ev : 'q';
+  QL.push({ at: Date.now(), mid: m.id, name: m.name, kind, ev, q: cut(e.q, 200), ans: cut(e.ans, 80), pick: cut(e.pick, 80), tries: Math.min(99, Math.max(0, Math.round(Number(e.tries) || 0))), ok: e.ok ? 1 : 0, n: Math.min(999, Math.max(0, Math.round(Number(e.n) || 0))) });
+  if (QL.length > MAX_QLOG) QL.splice(0, QL.length - MAX_QLOG);
+  qDirty = true;
+}
+function quizReport(f = {}) {
+  const mid = Number(f.mid) || 0, from = Number(f.from) || 0, to = Number(f.to) || Date.now() + 1;
+  const list = QL.filter(r => (!mid || r.mid === mid) && r.at >= from && r.at < to);
+  return { rows: list.slice(-3000).reverse().map(r => ({ ...r, code: memberCode(r.mid) })), total: list.length };
+}
 
 // ---------- 工具 ----------
 const hashPin = (pin, salt = crypto.randomBytes(8).toString('hex')) => salt + ':' + crypto.scryptSync(String(pin), salt, 24).toString('hex');
@@ -199,7 +238,7 @@ const isAdmin = t => { const e = adminTokens.get(t); return !!e && e > Date.now(
 function adminState(onlineIds) {
   return {
     storage: storage(), settings: S.settings, now: Date.now(),
-    members: S.members.map(m => ({ id: m.id, name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m), pg: !!m.pg })),
+    members: S.members.map(m => ({ id: m.id, code: memberCode(m.id), name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m), pg: !!m.pg })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
     helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
@@ -257,4 +296,4 @@ function adminAction(a) {
   touch(); return { ok: true, changed: m.id };
 }
 
-module.exports = { load, flush, apply, login, resume, forgot, ssoLogin, syncGold, pgEnabled: () => !!PG_URL, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
+module.exports = { quizLog, quizReport, load, flush, apply, login, resume, forgot, ssoLogin, syncGold, pgEnabled: () => !!PG_URL, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };

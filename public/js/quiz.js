@@ -39,7 +39,7 @@ export function buildQuiz(api) {
   }
   const speakQ = q => api.say(q.say?.en || '', q.say?.zh || '', { force: true, now: true });
   function open(mode) {
-    S.mode = mode; S.streak = 0; S.q = newQ(mode === 'v' ? 'vocab' : subjOf()); save(); hintOpen = false;
+    S.mode = mode; S.streak = 0; S.q = newQ(mode === 'v' ? 'vocab' : subjOf()); S.tries = 0; S.n = 0; save(); hintOpen = false;
     api.onOpen?.(); api.sfx.ding();
     render(''); el.style.display = 'flex';
     const m = S.q.subject === 'math';
@@ -66,6 +66,11 @@ export function buildQuiz(api) {
     const q = S.q; if (!q || locked) return;
     const ok = i === q.ans, mark = []; mark[i] = ok ? 'right' : 'wrong'; if (!ok && S.mode !== 'v') mark[q.ans] = 'right';
     if (ok) { api.sfx.pickup(); api.onQuizOK?.(); } else api.sfx.error();
+    // 答題報告
+    const rec = { kind: S.mode === 'v' ? 'vocab' : q.subject === 'math' ? 'math' : 'en', ev: 'q', q: S.mode === 'v' ? `「${q.text}」係咩意思？` : q.text, ans: q.ops[q.ans], pick: q.ops[i] };
+    S.tries = (S.tries || 0) + 1; S.n = (S.n || 0) + 1;
+    if (S.mode === 'v') { if (ok) { api.qlog?.({ ...rec, tries: S.tries, ok: 1 }); S.tries = 0; } }
+    else { api.qlog?.({ ...rec, tries: 1, ok: ok ? 1 : 0 }); S.tries = 0; }
     if (S.mode === 'v') {
       if (!ok) { render(`❌ 唔係喎，再試吓！`, '#c62828', mark); api.say('Try again!', '再試吓！', { force: true, now: true }); return; }
       render(`✅ 啱咗！${q.text} = ${q.ops[q.ans]}`, '#2e7d32', mark);
@@ -77,6 +82,7 @@ export function buildQuiz(api) {
     if (ok) {
       S.streak++;
       if (S.streak >= N) {
+        api.qlog?.({ kind: rec.kind, ev: 'pass', n: S.n, q: `連續答啱 ${N} 條，過關` });
         render(N > 1 ? `🎉 連續答啱 ${N} 條！可以繼續玩喇` : '🎉 答啱咗！可以繼續玩喇', '#2e7d32', mark);
         api.say(N > 1 ? 'Excellent! You got two right in a row. Well done!' : 'Correct! Well done!', N > 1 ? '好叻！連續答啱兩條！' : '答啱咗！好叻！', { force: true, now: true });
         const hadEn = cfg.subject !== 'math';

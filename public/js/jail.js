@@ -120,9 +120,11 @@ export function buildJail(scene, api) {
     const Q = S.quiz; if (!Q || !Q.q || qLock) return;
     const q = Q.q, ok = i === q.ans, mark = []; mark[i] = ok ? 'right' : 'wrong'; if (!ok) mark[q.ans] = 'right';
     if (ok) { api.sfx.pickup(); Q[q.subject === 'math' ? 'math' : 'en']++; } else api.sfx.error();
+    Q.n = (Q.n || 0) + 1;
+    api.qlog?.({ kind: 'jail', ev: 'q', q: `[${q.subject === 'math' ? '數學' : '英文'}] ${q.text}`, ans: q.ops[q.ans], pick: q.ops[i], tries: 1, ok: ok ? 1 : 0 });
     save();
     const done = Q.math >= NEED.math && Q.en >= NEED.en;
-    if (done) { renderQ('🎉 全部答啱晒！可以出獄喇', '#2e7d32', mark); qLock = true; setTimeout(() => { qLock = false; release(); }, 1600); return; }
+    if (done) { api.qlog?.({ kind: 'jail', ev: 'pass', n: Q.n, q: '監獄答題：答啱 3 數學 + 2 英文，出獄' }); renderQ('🎉 全部答啱晒！可以出獄喇', '#2e7d32', mark); qLock = true; setTimeout(() => { qLock = false; release(); }, 1600); return; }
     renderQ(ok ? '✅ 啱咗！' : `❌ 正確答案係 ${LET[q.ans]}. ${q.ops[q.ans]}${q.tip ? `　💡 ${q.tip}` : ''}`, ok ? '#2e7d32' : '#c62828', mark);
     api.say(ok ? 'Correct!' : `The answer is ${q.ops[q.ans]}.`, ok ? '啱咗！' : `答案係 ${q.ops[q.ans]}`, { force: true, now: true });
     qLock = true;
