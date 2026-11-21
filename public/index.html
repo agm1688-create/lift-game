@@ -65,6 +65,7 @@
   .tb { width:46px; height:46px; border-radius:12px; background:var(--bg); font-size:22px; display:flex; align-items:center; justify-content:center; position:relative; }
   .tb.on { background:#1b8a3a; box-shadow:0 0 0 2px #6f6; }
   .tb small { position:absolute; bottom:1px; font-size:9px; opacity:.85; }
+  a.tb { color:inherit; text-decoration:none; } #btnHome { background:#c62828; }
   #sizeBox { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:64px; background:var(--bg); padding:10px; border-radius:12px; font-size:13px; }
   #joy { position:absolute; left:calc(24px + env(safe-area-inset-left)); bottom:24px; width:140px; height:140px; border-radius:50%; background:rgba(0,0,0,.28); border:2px solid rgba(255,255,255,.6); touch-action:none; }
   #knob { position:absolute; left:50%; top:50%; width:60px; height:60px; margin:-30px; border-radius:50%; background:rgba(255,255,255,.75); box-shadow:0 2px 6px rgba(0,0,0,.4); }
@@ -262,6 +263,7 @@
   </div>
   <div id="wifi" class="hidden">📶 Wi-Fi 已連接</div>
   <div id="topR">
+    <a class="tb" id="btnHome" href="/" title="返回 28 遊樂場">🏠<small>28遊戲</small></a>
     <button class="tb" id="btnFP" title="第一身 (V)">👁<small>第一身</small></button>
     <button class="tb" id="btnBag" title="背包">🎒<small>背包</small></button>
     <button class="tb" id="btnMap" title="大地圖 (M)">🗺<small>地圖</small></button>
@@ -413,5 +415,12 @@
 <div id="toast"></div>
 <div id="flash"></div>
 <script type="module" src="js/main.js"></script>
+<script>
+// 返回 28 遊樂場：只係喺遊樂場底下（/games/lift/）先顯示；撳之前問一次，費事細路誤撳
+(function () { var b = document.getElementById('btnHome'); if (!b) return;
+  if (!/^\/games\//.test(location.pathname)) { b.style.display = 'none'; return; }
+  b.addEventListener('click', function (e) { if (!confirm('返回 28 遊樂場？（你嘅進度會保留）')) e.preventDefault(); });
+})();
+</script>
 </body>
 </html>
