@@ -88,7 +88,7 @@ export function askLogin(api, name, onOk) {
       .then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }))
       .then(r => {
         busy = false;
-        if (!r.ok) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); return render('❌ ' + (r.err || '密碼唔啱')); }
+        if (!r.ok) { input = ''; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); clearTimeout(el._shk); el._shk = setTimeout(() => el.classList.remove('shake'), 400);   /* 只震一次：之後撳掣重畫唔會再震 */ return render('❌ ' + (r.err || '密碼唔啱')); }
         close();
         if (isNight()) api.store?.set('nightOK', nightId());   // 夜晚登入咗就唔使再輸多次
         onOk(r.role, r.token || '', r.acct || null);
@@ -116,7 +116,7 @@ export function buildNightLock(api) {
     if (k === 'del') { input = input.slice(0, -1); return render(); }
     if (k === 'ok') {
       if (input === password() || input === ADMIN_PW) { api.store.set('nightOK', nightId()); locked = false; el.style.display = 'none'; input = ''; api.sfx?.pickup(); api.toast?.('🔓 密碼啱，可以繼續玩。唔好玩太夜呀！', 3500); return; }
-      input = ''; api.sfx?.error(); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+      input = ''; api.sfx?.error(); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); clearTimeout(el._shk); el._shk = setTimeout(() => el.classList.remove('shake'), 400);   /* 只震一次：之後撳掣重畫唔會再震 */
       return render('❌ 密碼唔啱，再試過');
     }
   }
