@@ -26,7 +26,7 @@ import { buildCity, district, DISTRICT_COLOR, DISTRICT_NAME, LANDMARKS, CHUNK, T
 import { buildTraffic } from './traffic.js';
 import { buildEvents } from './events.js';
 import { buildJail } from './jail.js';
-import { buildNightLock, askPassword, askLogin } from './nightlock.js';
+import { buildNightLock, askPassword, askLogin, deviceId } from './nightlock.js';
 import { buildRiver, SEATS as BOAT_SEATS, buildBoat, PATH as BOAT_PATH } from './river.js';
 import { buildMTR, ENTR as MTR_ENTR } from './mtr.js';
 import { ST as MTR_ST, LINES as MTR_LINES } from './mtr_data.js';
@@ -154,7 +154,7 @@ $('applyBtn').onclick = () => {
     if (!/^\d{4}$/.test(pin)) return msg('密碼要啱啱好 4 個數字');
     if (pin !== pin2) return msg('兩次輸入嘅密碼唔一樣');
     msg('⏳ 開緊帳戶…', true);
-    const r = await fetch('api/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }));
+    const r = await fetch('api/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, pin, dev: deviceId() }) }).then(r => r.json()).catch(() => ({ err: '連唔到伺服器，請再試' }));
     if (!r.ok) return msg('❌ ' + (r.err || '申請唔成功'));
     store.set('member', { name: r.name, token: r.token }); showSaved();   // 開咗帳戶即刻記住呢部機
     const tc = r.acct ? r.acct.timeCoins : 0, mins = r.acct ? r.acct.minPerCoin : 0;
@@ -178,7 +178,7 @@ $('go').onclick = () => {
   // 28 遊樂場帳戶：直接用大廳嘅登入
   if (pg.tok && pg.name && pg.name.toLowerCase() === name.toLowerCase()) {
     $('go').disabled = true; $('go').textContent = '⏳ 登入緊…';
-    fetch('api/sso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: pg.tok }) })
+    fetch('api/sso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: pg.tok, dev: deviceId() }) })
       .then(r => r.json()).catch(() => ({ err: '連唔到伺服器' }))
       .then(r => { $('go').disabled = false; $('go').textContent = '開始玩 ▶'; if (r.ok) enter('member', r.token, r.name); else { pg.tok = pg.name = null; showSaved(); ask(); } });
     return;
@@ -186,7 +186,7 @@ $('go').onclick = () => {
   const saved = store.get('member', null);
   if (saved && saved.token && saved.name.toLowerCase() === name.toLowerCase()) {
     $('go').disabled = true; $('go').textContent = '⏳ 登入緊…';
-    fetch('api/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: saved.token }) })
+    fetch('api/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: saved.token, dev: deviceId() }) })
       .then(r => r.json()).catch(() => ({ err: '連唔到伺服器' }))
       .then(r => { $('go').disabled = false; $('go').textContent = '開始玩 ▶'; if (r.ok) enter('member', r.token, r.name); else { store.set('member', null); showSaved(); ask(); } });
   } else ask();

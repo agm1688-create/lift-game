@@ -21,11 +21,13 @@ async function api(req, res, p) {
   const ip = ipOf(req);
   if (req.method !== 'POST') return json(res, 405, { err: 'POST only' });
   const b = await body(req);
-  if (p === '/api/login') return json(res, 200, ACC.login(b.name, b.pin, ip));
-  if (p === '/api/apply') return json(res, 200, ACC.apply(b.name, b.pin, ip));
-  if (p === '/api/resume') return json(res, 200, ACC.resume(b.token, ip));
+  if (!ACC.ready()) return json(res, 200, { ok: false, err: '會員系統啟動緊，請等 1 分鐘再試' });
+  if (p === '/api/login') return json(res, 200, ACC.login(b.name, b.pin, ip, b.dev));
+  if (p === '/api/apply') return json(res, 200, ACC.apply(b.name, b.pin, ip, b.dev));
+  if (p === '/api/resume') return json(res, 200, ACC.resume(b.token, ip, b.dev));
+  if (p === '/api/reset') return json(res, 200, ACC.resetPin(b.name, b.dev, b.pin, ip));
   if (p === '/api/forgot') return json(res, 200, ACC.forgot(b.name, ip));
-  if (p === '/api/sso') return json(res, 200, await ACC.ssoLogin(b.token, !!b.peek, ip));
+  if (p === '/api/sso') return json(res, 200, await ACC.ssoLogin(b.token, !!b.peek, ip, b.dev));
   if (p === '/api/admin/login') return json(res, 200, ACC.adminLogin(b.pw, ip));
   if (!ACC.isAdmin(req.headers['x-admin'])) return json(res, 401, { err: '請重新登入管理員' });
   if (p === '/api/admin/quizlog') return json(res, 200, ACC.quizReport(b));
@@ -216,4 +218,5 @@ setInterval(() => {
 const bye = () => ACC.flush().finally(() => process.exit(0));
 process.on('SIGTERM', bye); process.on('SIGINT', bye);
 
-ACC.load().catch(e => console.error('會員系統載入失敗', e)).finally(() => server.listen(PORT, () => console.log(`搭Lift遊戲 running: http://localhost:${PORT}`)));
+server.listen(PORT, () => console.log(`搭Lift遊戲 running: http://localhost:${PORT}`));
+ACC.load();

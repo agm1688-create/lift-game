@@ -24,14 +24,23 @@ const DEF_QUIZ = { level: 2, region: 'HK', every: 3, subject: 'en', need: 2, tip
 const quizOf = m => ({ ...DEF_QUIZ, ...(m.quiz || {}) });
 const DEF = { minPerCoin: 10, goldPerQuiz: 1, goldPerTimeCoin: 10, applyCoins: 3, applyOpen: 1 };
 let S = { settings: { ...DEF }, members: [], sessions: [], apps: [], nextId: 1, nextSid: 1, nextAid: 1 };
-let pool = null, dirty = false;
+let pool = null, dirty = false, ready = false;
 const storage = () => (pool ? 'database' : 'file');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- 儲存 ----------
+// 開機嗰陣網絡未準備好（例如伺服器重啟）會連唔到資料庫：每 5 秒再試，直到成功為止。
+// 未載入成功之前：會員 API 會叫人等陣，亦唔會寫資料庫（費事用空白資料蓋咗所有會員）
 async function load() {
+  for (let n = 1; ; n++) {
+    try { await loadOnce(); ready = true; return; }
+    catch (e) { console.error(`會員系統載入失敗（第 ${n} 次），5 秒後再試：`, e.code || e.message); await sleep(5000); }
+  }
+}
+async function loadOnce() {
   if (process.env.DATABASE_URL) {
     const { Pool } = require('pg');
-    pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
+    if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
     await pool.query('CREATE TABLE IF NOT EXISTS lift_kv (k TEXT PRIMARY KEY, v JSONB NOT NULL)');
     const r = await pool.query("SELECT v FROM lift_kv WHERE k = 'accounts'");
     if (r.rows[0]) S = Object.assign(S, r.rows[0].v);
@@ -45,6 +54,7 @@ async function load() {
   console.log(`會員系統：${S.members.length} 個會員，${QL.length} 條答題紀錄（儲存：${storage()}）`);
 }
 async function flush() {
+  if (!ready) return;   // 未載入成功，絕對唔寫
   await flushQlog();
   if (!dirty) return; dirty = false;
   const json = JSON.stringify(S);
@@ -61,13 +71,12 @@ const QFILE = path.join(__dirname, 'data', 'quizlog.json');
 const MAX_QLOG = 50000;
 let QL = [], qDirty = false;
 async function loadQlog() {
-  try {
-    if (pool) { const r = await pool.query("SELECT v FROM lift_kv WHERE k = 'quizlog'"); if (r.rows[0] && Array.isArray(r.rows[0].v)) QL = r.rows[0].v; }
-    else if (fs.existsSync(QFILE)) QL = JSON.parse(fs.readFileSync(QFILE, 'utf8')) || [];
-  } catch (e) { console.error('答題報告讀唔到', e.message); QL = []; }
+  // 資料庫讀唔到就當載入失敗（會再試），唔好當冇紀錄然後蓋咗佢
+  if (pool) { const r = await pool.query("SELECT v FROM lift_kv WHERE k = 'quizlog'"); if (r.rows[0] && Array.isArray(r.rows[0].v)) QL = r.rows[0].v; return; }
+  try { if (fs.existsSync(QFILE)) QL = JSON.parse(fs.readFileSync(QFILE, 'utf8')) || []; } catch (e) { console.error('答題報告讀唔到', e.message); QL = []; }
 }
 async function flushQlog() {
-  if (!qDirty) return; qDirty = false;
+  if (!ready || !qDirty) return; qDirty = false;
   const json = JSON.stringify(QL);
   try {
     if (pool) await pool.query("INSERT INTO lift_kv (k, v) VALUES ('quizlog', $1) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", [json]);
@@ -81,6 +90,7 @@ const EVS = ['q', 'pass', 'wait20', 'start'];
 const cut = (v, n) => String(v == null ? '' : v).replace(/<[^>]*>/g, '').slice(0, n);
 // 遊戲傳嚟一條紀錄：{ kind, ev, q, ans, pick, tries, ok, n }
 function quizLog(link, e) {
+  if (!ready) return;
   const m = link && byId(link.m.id); if (!m || !e || typeof e !== 'object') return;
   const kind = KINDS.includes(e.kind) ? e.kind : 'en', ev = EVS.includes(e.ev) ? e.ev : 'q';
   QL.push({ at: Date.now(), mid: m.id, name: m.name, kind, ev, q: cut(e.q, 200), ans: cut(e.ans, 80), pick: cut(e.pick, 80), tries: Math.min(99, Math.max(0, Math.round(Number(e.tries) || 0))), ok: e.ok ? 1 : 0, n: Math.min(999, Math.max(0, Math.round(Number(e.n) || 0))) });
@@ -116,8 +126,18 @@ const NAME_RE = /^[㐀-鿿A-Za-z0-9]{1,10}$/;
 const nameOK = n => NAME_RE.test(n);
 const NAME_ERR = '會員名只可以用中文、英文字母同數字，最多 10 個字';
 
+// ---------- 記住邊部機登入過（忘記密碼：同一部機可以直接重設）----------
+const DEV_RE = /^[0-9a-f]{32}$/;
+const devHash = d => crypto.createHash('sha256').update('lift-dev:' + d).digest('hex').slice(0, 32);
+function seenDev(m, dev) {
+  if (!m || !DEV_RE.test(String(dev || ''))) return;
+  const h = devHash(dev); m.devs = (m.devs || []).filter(x => x !== h); m.devs.push(h);
+  if (m.devs.length > 10) m.devs.splice(0, m.devs.length - 10);
+  touch();
+}
+
 // ---------- 申請做會員 ----------
-function apply(name, pin, ip) {
+function apply(name, pin, ip, dev) {
   name = String(name || '').trim(); pin = String(pin || '');
   if (!Number(S.settings.applyOpen)) return { ok: false, err: '暫時唔接受申請，請直接搵管理員' };
   if (!nameOK(name)) return { ok: false, err: NAME_ERR };
@@ -130,12 +150,12 @@ function apply(name, pin, ip) {
   if (S.members.filter(m => m.createdIp === ip && m.created > day).length >= 5) return { ok: false, err: '今日呢度開咗好多個帳戶，聽日再試或者搵管理員' };
   // 唔使批：即刻開帳戶，送時間幣，可以即刻玩
   const m = { id: S.nextId++, name, pin: hashPin(pin), timeCoins: Number(S.settings.applyCoins) || 0, creditSec: 0, gold: 0, totalSec: 0, created: Date.now(), createdIp: ip, token: crypto.randomBytes(16).toString('hex') };
-  S.members.push(m); touch();
+  S.members.push(m); seenDev(m, dev); touch();
   return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 
 // ---------- 遊戲登入 ----------
-function login(name, pin, ip) {
+function login(name, pin, ip, dev) {
   if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
   pin = String(pin || '');
   if (pin === ADMIN_PW) return { ok: true, role: 'admin' };
@@ -143,20 +163,36 @@ function login(name, pin, ip) {
   if (!m) { const a = S.apps.find(x => x.name.toLowerCase() === String(name || '').trim().toLowerCase()); if (a) return { ok: false, err: '你嘅申請仲未批准，請等管理員' }; }
   if (!m || !pinOK(pin, m.pin)) { fail(ip); return { ok: false, err: '冇呢個會員，或者密碼唔啱' }; }
   if (!m.token) { m.token = crypto.randomBytes(16).toString('hex'); touch(); }
+  seenDev(m, dev);
   return { ok: true, role: 'member', token: m.token, acct: acct(m) };
+}
+// 忘記密碼：呢部機之前用呢個會員登入過，就可以直接設新密碼（其他機要重新登入）
+function resetPin(name, dev, pin, ip) {
+  if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
+  pin = String(pin || '');
+  if (!/^\d{4,8}$/.test(pin) || pin === ADMIN_PW) return { ok: false, err: '新密碼要 4–8 個數字' };
+  const m = byName(name || '');
+  const ok = m && DEV_RE.test(String(dev || '')) && (m.devs || []).includes(devHash(dev));
+  if (!ok) { fail(ip); return { ok: false, notDevice: true, err: '呢部機未用過呢個會員登入，唔可以直接重設密碼' }; }
+  m.pin = hashPin(pin); m.token = crypto.randomBytes(16).toString('hex');
+  S.helps = (S.helps || []).filter(h => h.mid !== m.id);
+  touch();
+  return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 const byToken = t => t && S.members.find(m => m.token === t);
 // 記住呢部機：用通行證直接登入
-function resume(token, ip) {
+function resume(token, ip, dev) {
   if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
   const m = byToken(String(token || ''));
   if (!m) { fail(ip); return { ok: false, err: '要再輸入一次密碼' }; }
+  seenDev(m, dev);
   return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 // 忘記密碼：通知管理員
 function forgot(name, ip) {
   name = String(name || '').trim().slice(0, 16);
   if (!name) return { ok: false, err: '先填會員名' };
+  S.helps = S.helps || [];
   if (S.helps.filter(h => h.ip === ip).length >= 5 || S.helps.length >= 100) return { ok: false, err: '求助太多，請直接搵管理員' };
   const m = byName(name);
   if (!S.helps.some(h => h.name.toLowerCase() === name.toLowerCase())) { S.helps.push({ id: S.nextHid++, name, mid: m ? m.id : 0, ip, at: Date.now() }); touch(); }
@@ -207,7 +243,7 @@ async function exchange(link) {
   return { acct: acct(m) };
 }
 // ---------- 28 遊樂場帳戶登入 ----------
-async function ssoLogin(token, peek, ip) {
+async function ssoLogin(token, peek, ip, dev) {
   if (!PG_URL) return { ok: false, err: '未接駁 28 遊樂場' };
   if (blocked(ip)) return { ok: false, err: '試錯太多次，請等 1 分鐘再試' };
   const u = await pgCall('/api/ext/verify', { token: String(token || '') });
@@ -221,7 +257,7 @@ async function ssoLogin(token, peek, ip) {
     S.members.push(m);
   }
   m.gold = u.coins; if (!m.token) m.token = crypto.randomBytes(16).toString('hex');
-  touch();
+  seenDev(m, dev); touch();
   return { ok: true, role: 'member', name: m.name, token: m.token, acct: acct(m) };
 }
 const acctOf = link => { const m = link && byId(link.m.id); return m ? acct(m) : null; };
@@ -278,7 +314,7 @@ function adminAction(a) {
   if (a.op === 'coins') { m.timeCoins = Math.max(0, (m.timeCoins || 0) + num(a.n)); }
   else if (a.op === 'gold') return goldAdd(m, num(a.n)).then(r => r.ok ? { ok: true, changed: m.id } : { err: r.err });
   else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
-  else if (a.op === 'logoutAll') m.token = null;
+  else if (a.op === 'logoutAll') { m.token = null; m.devs = []; }
   else if (a.op === 'role') { if (!ROLES.includes(a.role)) return { err: '唔識呢個角色' }; m.role = a.role; }
   else if (a.op === 'quiz') {
     const q = a.quiz || {};
@@ -296,4 +332,4 @@ function adminAction(a) {
   touch(); return { ok: true, changed: m.id };
 }
 
-module.exports = { quizLog, quizReport, load, flush, apply, login, resume, forgot, ssoLogin, syncGold, pgEnabled: () => !!PG_URL, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
+module.exports = { ready: () => ready, resetPin, quizLog, quizReport, load, flush, apply, login, resume, forgot, ssoLogin, syncGold, pgEnabled: () => !!PG_URL, byToken, startSession, tick, endSession, quizOK, exchange, acctOf, adminLogin, isAdmin, adminState, adminAction };
