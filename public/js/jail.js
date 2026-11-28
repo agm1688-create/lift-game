@@ -22,7 +22,14 @@ const CSS = `#jailHud { position:fixed; left:50%; top:calc(8px + env(safe-area-i
 #jailQuiz .ops button.wrong { background:#ffcdd2; border-color:#e53935; }
 #jailQuiz .msg { min-height:24px; margin-top:8px; font-weight:700; font-size:16px; }
 #jailQuiz .say { margin-left:6px; background:#ffebee; border:0; border-radius:10px; padding:4px 10px; cursor:pointer; font-size:16px; }
-@media (max-height:500px) { #jailQuiz .q { font-size:19px; margin:6px 0; } #jailQuiz .ops button { padding:7px 10px; font-size:17px; } }`;
+@media (max-height:500px) { #jailQuiz .q { font-size:19px; margin:6px 0; } #jailQuiz .ops button { padding:7px 10px; font-size:17px; } #jailQuiz .left { font-size:22px; } #jailQuiz .sub { font-size:12px; } }
+#jailCutBtn { position:fixed; left:50%; top:calc(78px + env(safe-area-inset-top)); transform:translateX(-50%); z-index:27; display:none; padding:10px 18px; border-radius:14px; border:3px solid #fff3; background:linear-gradient(#ffd54f,#ffb300); color:#3e2700; font:800 17px system-ui,sans-serif; box-shadow:0 4px 14px #0007; cursor:pointer; touch-action:manipulation; }
+#jailQuiz .left { font:800 30px system-ui,sans-serif; color:#b71c1c; margin:4px 0; }
+#jailQuiz .delta { display:inline-block; margin-left:10px; font-size:22px; padding:2px 10px; border-radius:10px; animation:jcPop .9s ease-out; }
+#jailQuiz .delta.minus { background:#c8e6c9; color:#1b5e20; } #jailQuiz .delta.plus { background:#ffcdd2; color:#b71c1c; }
+#jailQuiz .ops button { touch-action:manipulation; min-height:48px; }
+#jailQuiz .close { margin-top:10px; padding:10px 16px; border-radius:12px; border:2px solid #bbb; background:#fff; font-size:16px; cursor:pointer; touch-action:manipulation; }
+@keyframes jcPop { 0% { transform:scale(1.6); } 100% { transform:scale(1); } }`;
 // 答題出獄：要答啱幾多條數學 / 英文
 const NEED = { math: 3, en: 2 };
 
@@ -54,7 +61,7 @@ export function buildJail(scene, api) {
 
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const hud = document.createElement('div'); hud.id = 'jailHud'; hud.style.display = 'none'; document.body.appendChild(hud);
-  const S = Object.assign({ until: 0, back: null, why: '', quiz: null }, api.store.get('jail', {}));
+  const S = Object.assign({ until: 0, back: null, why: '', quiz: null, cut: null }, api.store.get('jail', {}));
   const save = () => api.store.set('jail', S);
   const left = () => Math.max(0, (S.until - Date.now()) / 1000);
   const active = () => S.until > Date.now() && !!S.back;
@@ -64,13 +71,13 @@ export function buildJail(scene, api) {
   function arrest(sec, why) {
     if (active()) return;
     const back = api.prepare();
-    S.until = Date.now() + sec * 1000; S.back = back; S.why = why; save();
+    S.until = Date.now() + sec * 1000; S.back = back; S.why = why; S.cut = null; save();
     api.sfx.alarm(1.2);
-    api.blackout(() => { cell(); api.toast(`👮 ${why}\n要坐監 ${Math.round(sec / 60)} 分鐘！`, 4500); }, 900);
+    api.blackout(() => { cell(); api.toast(`👮 ${why}\n要坐監 ${Math.round(sec / 60)} 分鐘！\n撳「📝 答題減刑」：答啱一條減 1 分鐘，答錯加 1 分鐘`, 6000); }, 900);
   }
   function release() {
-    const wasQuiz = !!S.quiz; closeQuiz();
-    const back = S.back; S.until = 0; S.back = null; S.quiz = null; save(); hud.style.display = 'none';
+    const wasQuiz = !!S.quiz; closeQuiz(); cutOpen = false; cutBtn.style.display = 'none';
+    const back = S.back; S.until = 0; S.back = null; S.quiz = null; S.cut = null; save(); hud.style.display = 'none';
     api.sfx.ding();
     api.blackout(() => { if (back) api.teleport(back[0], back[1], back[2]); api.toast(wasQuiz ? '🔓 答啱晒題目，可以出獄喇！下次唔好再搶警車喇！' : '🔓 坐完監，可以走喇。下次記住紅燈要停車！', 4000); if (wasQuiz) api.say('You answered all the questions. You are free now. Do not take police cars again!', '答啱晒，可以走喇！下次唔好再搶警車！', { force: true }); else api.onRelease?.(); }, 900);
   }
@@ -130,6 +137,71 @@ export function buildJail(scene, api) {
     qLock = true;
     setTimeout(() => { qLock = false; nextQ(); renderQ(''); speak(Q.q); }, ok ? 1200 : 3000);
   }
+  // ---------- 答題減刑（沖紅燈等有時限嘅坐監）：答啱 −1 分鐘、答錯 +1 分鐘 ----------
+  const CUT_SEC = 60, CUT_MAX = 60 * 60, CUT_GAP = 1500;   // 每條 ±1 分鐘；刑期最多 60 分鐘；兩條之間最少等 1.5 秒
+  const cutBtn = document.createElement('button'); cutBtn.id = 'jailCutBtn'; cutBtn.type = 'button';
+  cutBtn.innerHTML = '📝 答題減刑：答啱 −1 分鐘'; document.body.appendChild(cutBtn);
+  cutBtn.addEventListener('click', () => openCut());
+  let cutOpen = false, cutDelta = '';
+  const timedJail = () => active() && !S.quiz;
+  function cutQ() {
+    const C = S.cut, cfg = api.quizCfg?.() || {}, lv = Math.min(6, Math.max(1, Number(cfg.level) || 2)), rg = cfg.region === 'TW' ? 'TW' : 'HK';
+    let q = null;
+    for (let t = 0; t < 40; t++) {   // 唔出重複題目
+      const subj = Math.random() < 0.5 ? 'math' : 'en', c = { ...makeQ(subj, lv, rg), subject: subj };
+      q = c; if (!C.seen.includes(c.text)) break;
+    }
+    C.seen.push(q.text); if (C.seen.length > 300) C.seen.splice(0, C.seen.length - 300);
+    C.q = q; save();
+  }
+  function openCut() {
+    if (!timedJail()) return;
+    if (!S.cut) S.cut = { seen: [], ok: 0, bad: 0, n: 0, q: null, next: 0 };
+    if (!S.cut.q) cutQ();
+    cutOpen = true; cutDelta = ''; renderCut(''); qel.style.display = 'flex'; speak(S.cut.q);
+  }
+  function closeCut() { cutOpen = false; qel.style.display = 'none'; }
+  function renderCut(msg, color = '#2e7d32', mark = null) {
+    const C = S.cut, q = C && C.q; if (!q) return;
+    const m = q.subject === 'math';
+    const qText = String(q.text).replace(/_{2,}/g, '<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>');
+    qel.innerHTML = `<div class="qb"><h2>📝 答題減刑：${m ? '🧮 數學題' : '📝 英文題'}</h2>
+      <div class="sub">每答啱 1 條，刑期<b style="color:#2e7d32">減 1 分鐘</b>；每答錯 1 條，刑期<b style="color:#c62828">加 1 分鐘</b>。減到 0 就即刻出獄！</div>
+      <div class="left">⏳ 仲要坐 <span id="jcLeft">${fmt(left())}</span>${cutDelta}</div>
+      <div class="prog">✅ 答啱 ${C.ok} 條　❌ 答錯 ${C.bad} 條</div>
+      <div class="q">${qText}${q.say?.en ? '<button class="say" title="再聽一次">🔊</button>' : ''}</div>
+      <div class="ops">${q.ops.map((o, i) => `<button type="button" data-i="${i}" class="${mark && mark[i] ? mark[i] : ''}"><b>${LET[i]}.</b>${o}</button>`).join('')}</div>
+      <div class="msg" style="color:${color}">${msg}</div>
+      <button type="button" class="close">⏸ 唔答住，慢慢等</button></div>`;
+    qel.querySelectorAll('[data-i]').forEach(b => b.onclick = () => answerCut(+b.dataset.i));
+    qel.querySelector('.say')?.addEventListener('click', () => speak(q));
+    qel.querySelector('.close').onclick = () => closeCut();
+  }
+  function answerCut(i) {
+    const C = S.cut; if (!C || !C.q || qLock || !timedJail()) return;
+    if (Date.now() < (C.next || 0)) return;   // 冷卻：唔可以連撳
+    const q = C.q, ok = i === q.ans, mark = []; mark[i] = ok ? 'right' : 'wrong'; if (!ok) mark[q.ans] = 'right';
+    C.n++; if (ok) C.ok++; else C.bad++;
+    // 改刑期：唔會少過 0，亦唔會多過 60 分鐘
+    const now = Date.now(), cur = Math.max(0, S.until - now);
+    const nxt = ok ? Math.max(0, cur - CUT_SEC * 1000) : Math.min(CUT_MAX * 1000, cur + CUT_SEC * 1000);
+    S.until = now + nxt; C.next = now + CUT_GAP;
+    cutDelta = ok ? '<span class="delta minus">−1 分鐘</span>' : '<span class="delta plus">+1 分鐘</span>';
+    if (ok) api.sfx.pickup(); else api.sfx.error();
+    api.qlog?.({ kind: 'jail', ev: 'q', q: `[減刑・${q.subject === 'math' ? '數學' : '英文'}] ${q.text}`, ans: q.ops[q.ans], pick: q.ops[i], tries: 1, ok: ok ? 1 : 0 });
+    C.q = null; save();
+    if (nxt <= 0) {
+      api.qlog?.({ kind: 'jail', ev: 'pass', n: C.n, q: `答題減刑：答啱 ${C.ok} 條、答錯 ${C.bad} 條，刑期減到 0，出獄` });
+      renderCutDone(mark, q); qLock = true; setTimeout(() => { qLock = false; S.until = Date.now() - 1; save(); release(); }, 1800); return;
+    }
+    C.q = q; renderCut(ok ? '✅ 啱咗！刑期減 1 分鐘' : `❌ 答錯，刑期加 1 分鐘。正確答案係 ${LET[q.ans]}. ${q.ops[q.ans]}${q.tip ? `　💡 ${q.tip}` : ''}`, ok ? '#2e7d32' : '#c62828', mark); C.q = null;
+    api.say(ok ? 'Correct! One minute less.' : `The answer is ${q.ops[q.ans]}. One more minute.`, ok ? '啱咗！減一分鐘。' : `答案係 ${q.ops[q.ans]}，加一分鐘。`, { force: true, now: true });
+    qLock = true;
+    setTimeout(() => { qLock = false; if (!cutOpen || !timedJail()) return; cutQ(); renderCut(''); speak(S.cut.q); }, ok ? 1500 : 3000);
+  }
+  function renderCutDone(mark, q) {
+    S.cut.q = q; cutDelta = '<span class="delta minus">−1 分鐘</span>'; renderCut('🎉 刑期減到 0！可以出獄喇', '#2e7d32', mark); S.cut.q = null;
+  }
   function update(dt, pos) {
     const near = Math.abs(pos.x - X) < 300 && Math.abs(pos.z - Z) < 300; g.visible = guard.visible = near;
     if (!S.back) return;
@@ -137,7 +209,10 @@ export function buildJail(scene, api) {
     hud.style.display = 'block';
     hud.innerHTML = S.quiz ? `⛓ 坐緊監：答啱題目先可以出獄（數學 ${S.quiz.math}/${NEED.math}、英文 ${S.quiz.en}/${NEED.en}）<small>${S.why || ''}</small>` : `⛓ 坐緊監：仲有 ${fmt(left())}<small>${S.why || ''}</small>`;
     if (S.quiz && qel.style.display !== 'flex' && !qLock) openQuiz();
+    // 答題減刑掣同倒數
+    cutBtn.style.display = timedJail() && !cutOpen ? 'block' : 'none';
+    if (cutOpen) { const e = document.getElementById('jcLeft'); if (e) e.textContent = fmt(left()); if (!timedJail()) closeCut(); }
     if (Math.abs(pos.x - X) > W + 0.5 || pos.z < Z - D - 0.5 || pos.z > Z + D + 0.5) cell();
   }
-  return { colliders: B.cols, update, arrest, arrestQuiz, resume, active, quizOpen: () => qel.style.display === 'flex', inside: p => Math.abs(p.x - X) < W + 6 && p.z > Z - D - 1 && p.z < Z + D + 8 };
+  return { colliders: B.cols, update, arrest, arrestQuiz, resume, active, openCut, quizOpen: () => qel.style.display === 'flex', inside: p => Math.abs(p.x - X) < W + 6 && p.z > Z - D - 1 && p.z < Z + D + 8 };
 }
