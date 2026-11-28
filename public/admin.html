@@ -101,7 +101,7 @@
     </section>
 
     <section class="card">
-      <h2>👥 會員</h2>
+      <h2>👥 會員 <button class="p" id="btnSync" style="float:right;font-size:14px" title="即刻將所有會員資料寫入伺服器資料庫，喺線會員即刻更新">🔄 同步到伺服器</button></h2>
       <div class="tbl"><table>
         <thead><tr><th>會員 ID / 會員名</th><th>角色</th><th>時間幣</th><th>剩餘時間</th><th>金幣</th><th>總遊戲時間</th><th>最後登入</th><th>IP 地址</th><th>操作</th></tr></thead>
         <tbody id="mBody"></tbody>
@@ -187,7 +187,7 @@ async function refresh(first) {
     <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><span class="code">${esc(m.code || '')}</span><b>${esc(m.name)}</b>${m.pg ? ' <span class="sub" title="28 遊樂場帳戶：金幣同大廳共用">🎮28</span>' : ''}</td>
     <td><select data-role="${m.id}">${[['player', '👦 普通玩家'], ['noquiz', '⭐ 免小測'], ['admin', '👑 管理員']].map(([k, t]) => `<option value="${k}"${m.role === k ? ' selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
-    <td class="num">${m.role === 'admin' ? '<b style="color:#b8860b" title="管理員唔扣時間、唔使做小測">♾ 無限</b>' : fmtD(m.timeLeft)}</td>
+    <td class="num">${m.unlim ? '<b style="color:#b8860b" title="唔扣時間">♾ 無限</b>' : fmtD(m.timeLeft)} ${m.unlimSet ? `<button class="s" data-op="unlim" data-on="0" data-id="${m.id}" title="返返用時間幣計時間">取消無限</button>` : `<button class="s" data-op="unlim" data-on="1" data-id="${m.id}" title="手動改為無限時間，唔扣時間幣">♾ 設為無限</button>`}${m.role === 'admin' && !m.unlimSet ? '<div class="sub">（管理員本身已經無限）</div>' : ''}</td>
     <td class="num">${m.gold} <button class="s" data-op="gold" data-n="10" data-id="${m.id}">+10</button> <button class="s" data-op="gold" data-n="-10" data-id="${m.id}">−10</button></td>
     <td class="num">${fmtD(m.totalSec)}</td>
     <td>${fmtT(m.lastLogin)}</td>
@@ -254,7 +254,14 @@ $('mBody').onclick = async e => {
   if (op === 'logoutAll' && !confirm(`「${m.name}」所有記住咗嘅機都會登出，下次要重新輸入密碼。確定？`)) return;
   if (op === 'delete' && !confirm(`確定刪除會員「${m.name}」？佢嘅時間幣同金幣會冇晒，唔可以還原。`)) return;
   let pin; if (op === 'pin') { pin = prompt(`輸入「${m.name}」嘅新密碼（4–8 個數字）`); if (pin == null) return; }
-  act({ op, id, n: b.dataset.n, pin }, $('mMsg'));
+  const r = await act({ op, id, n: b.dataset.n, pin, on: b.dataset.on }, $('mMsg'));
+  if (op === 'unlim' && r.ok) msg($('mMsg'), b.dataset.on === '1' ? `「${m.name}」而家係 ♾ 無限時間（喺線嘅話即刻生效）` : `「${m.name}」取消咗無限時間，返返用時間幣計`, true);
+};
+$('btnSync').onclick = async () => {
+  const b = $('btnSync'); b.disabled = true; b.textContent = '⏳ 同步緊…';
+  const r = await act({ op: 'sync' }, $('mMsg'));
+  b.disabled = false; b.textContent = '🔄 同步到伺服器';
+  if (r.ok) msg($('mMsg'), `✅ 已同步到伺服器（${r.storage === 'database' ? '資料庫' : '檔案'}）；喺線會員已經收到最新設定`, true);
 };
 // ---------- 答題報告 ----------
 const KIND_N = { en: '📝 英文小測', math: '🧮 數學小測', vocab: '🔤 生字小測', school: '📚 數學堂', jail: '⛓ 監獄答題' };

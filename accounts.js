@@ -113,7 +113,8 @@ const byName = name => S.members.find(m => m.name.toLowerCase() === String(name)
 // 會員角色：player = 普通玩家；noquiz = 免小測；admin = 管理員（免小測 + 唔扣時間幣）
 const ROLES = ['player', 'noquiz', 'admin'];
 const roleOf = m => ROLES.includes(m.role) ? m.role : 'player';
-const unlimited = m => roleOf(m) === 'admin';
+// 無限時間：管理員角色，或者管理頁手動設咗「♾ 無限」
+const unlimited = m => roleOf(m) === 'admin' || !!m.unlim;
 const acct = m => ({ name: m.name, role: roleOf(m), unlimited: unlimited(m), timeCoins: m.timeCoins, gold: m.gold, timeLeft: unlimited(m) ? 999999 : timeLeft(m), minPerCoin: S.settings.minPerCoin, goldPerTimeCoin: S.settings.goldPerTimeCoin, quiz: quizOf(m) });
 
 // 登入失敗太多次就暫停（每個 IP）
@@ -274,7 +275,7 @@ const isAdmin = t => { const e = adminTokens.get(t); return !!e && e > Date.now(
 function adminState(onlineIds) {
   return {
     storage: storage(), settings: S.settings, now: Date.now(),
-    members: S.members.map(m => ({ id: m.id, code: memberCode(m.id), name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m), pg: !!m.pg })),
+    members: S.members.map(m => ({ id: m.id, code: memberCode(m.id), name: m.name, timeCoins: m.timeCoins || 0, gold: m.gold || 0, timeLeft: timeLeft(m), totalSec: m.totalSec || 0, lastLogin: m.lastLogin || 0, lastIp: m.lastIp || '', created: m.created, online: onlineIds.has(m.id), quiz: quizOf(m), role: roleOf(m), pg: !!m.pg, unlim: unlimited(m), unlimSet: !!m.unlim })),
     sessions: S.sessions.slice(-400).reverse(),
     apps: S.apps.map(a => ({ id: a.id, name: a.name, ip: a.ip, at: a.at })),
     helps: S.helps.map(h => ({ id: h.id, name: h.name, mid: byId(h.mid) ? h.mid : 0, ip: h.ip, at: h.at })),
@@ -310,8 +311,11 @@ function adminAction(a) {
     }
     touch(); return { ok: true };
   }
+  // 同步到伺服器：即刻寫入資料庫，喺線會員即刻收到最新時間 / 角色
+  if (a.op === 'sync') { touch(); return flush().then(() => dirty ? { err: '寫入資料庫失敗，請再試' } : { ok: true, synced: true, storage: storage() }); }
   const m = byId(Number(a.id)); if (!m) return { err: '搵唔到會員' };
-  if (a.op === 'coins') { m.timeCoins = Math.max(0, (m.timeCoins || 0) + num(a.n)); }
+  if (a.op === 'unlim') { m.unlim = !!Number(a.on); }
+  else if (a.op === 'coins') { m.timeCoins = Math.max(0, (m.timeCoins || 0) + num(a.n)); }
   else if (a.op === 'gold') return goldAdd(m, num(a.n)).then(r => r.ok ? { ok: true, changed: m.id } : { err: r.err });
   else if (a.op === 'pin') { if (!pinRule(a.pin)) return { err: '密碼要 4–8 個數字（唔可以同管理員密碼一樣）' }; m.pin = hashPin(a.pin); m.token = null; S.helps = S.helps.filter(h => h.mid !== m.id); }
   else if (a.op === 'logoutAll') { m.token = null; m.devs = []; }
