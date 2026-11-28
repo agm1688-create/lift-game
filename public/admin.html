@@ -187,7 +187,7 @@ async function refresh(first) {
     <td><span class="dot ${m.online ? 'on' : ''}" title="${m.online ? '喺線' : '離線'}"></span><span class="code">${esc(m.code || '')}</span><b>${esc(m.name)}</b>${m.pg ? ' <span class="sub" title="28 遊樂場帳戶：金幣同大廳共用">🎮28</span>' : ''}</td>
     <td><select data-role="${m.id}">${[['player', '👦 普通玩家'], ['noquiz', '⭐ 免小測'], ['admin', '👑 管理員']].map(([k, t]) => `<option value="${k}"${m.role === k ? ' selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="num">${m.timeCoins} <button class="s" data-op="coins" data-n="1" data-id="${m.id}">+1</button> <button class="s" data-op="coins" data-n="5" data-id="${m.id}">+5</button> <button class="s" data-op="coins" data-n="-1" data-id="${m.id}">−1</button></td>
-    <td class="num">${fmtD(m.timeLeft)}</td>
+    <td class="num">${m.role === 'admin' ? '<b style="color:#b8860b" title="管理員唔扣時間、唔使做小測">♾ 無限</b>' : fmtD(m.timeLeft)}</td>
     <td class="num">${m.gold} <button class="s" data-op="gold" data-n="10" data-id="${m.id}">+10</button> <button class="s" data-op="gold" data-n="-10" data-id="${m.id}">−10</button></td>
     <td class="num">${fmtD(m.totalSec)}</td>
     <td>${fmtT(m.lastLogin)}</td>

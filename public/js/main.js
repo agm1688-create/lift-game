@@ -348,7 +348,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   function acctShow(a, timeup) {
     if (!a) return; acctNow = a; acctAt = performance.now(); if (a.quiz) quiz.config(a.quiz);
     const wasEx = api.noQuiz; api.noQuiz = a.role === 'noquiz' || a.role === 'admin';   // 角色：免小測
-    if (api.noQuiz && !wasEx) { if (quiz.active()) quiz.close(); if (school.active()) school.finish(true); if (acctShow._seen) toast(a.role === 'admin' ? '👑 你而家係管理員：免小測、唔扣時間' : '⭐ 你而家免小測', 3500); }
+    if (api.noQuiz && !wasEx) { if (quiz.active()) quiz.close(); if (school.active()) school.finish(true); setTimeout(() => jail.freeQuiz?.(), 0); if (acctShow._seen) toast(a.role === 'admin' ? '👑 你而家係管理員：免小測、唔扣時間' : '⭐ 你而家免小測', 3500); }
     acctShow._seen = true;
     acctHint.style.display = 'block';
     if (timeup) { if (!timeLocked) { sfx.error(); say('Your play time is finished. Time to take a break!', '遊戲時間用完喇，休息吓啦！'); } acctLock('遊戲時間用完喇', true); }
@@ -405,7 +405,8 @@ function startGame(myName, role = 'player', memberToken = '') {
     APACHE.m = m;
     interactables.push({ pos: new V3(APACHE.x + 3.5, 0, APACHE.z + 1), r: 5, label: () => '🚁 揸超級戰鬥直升機（火箭 + 機炮）', act: () => startFlight('apache', APACHE.x, APACHE.z, APACHE.yaw, APACHE.c), show: () => !P.flight }); }
   api.faceOf = () => P.face;
-  api.arrested = why => jail.arrestQuiz(why);
+  // 搶警車俾警察捉到：普通玩家要答啱 3 數學 + 2 英文先出獄；管理員 / 免小測唔使答題，坐 1 分鐘就出得
+  api.arrested = why => (api.admin || api.noQuiz) ? jail.arrest(60, why) : jail.arrestQuiz(why);
   api.quizCfg = () => quiz.cfg();
   api.hosing = () => P.held === 'hose' && P.spraying;
   const carjack = buildCarjack(scene, api, traffic, events);

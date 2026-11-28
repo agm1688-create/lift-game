@@ -214,5 +214,7 @@ export function buildJail(scene, api) {
     if (cutOpen) { const e = document.getElementById('jcLeft'); if (e) e.textContent = fmt(left()); if (!timedJail()) closeCut(); }
     if (Math.abs(pos.x - X) > W + 0.5 || pos.z < Z - D - 0.5 || pos.z > Z + D + 0.5) cell();
   }
-  return { colliders: B.cols, update, arrest, arrestQuiz, resume, active, openCut, quizOpen: () => qel.style.display === 'flex', inside: p => Math.abs(p.x - X) < W + 6 && p.z > Z - D - 1 && p.z < Z + D + 8 };
+  // 變咗管理員 / 免小測：要答題先出得嘅坐監即刻放人
+  const freeQuiz = () => { if (S.quiz && active()) { api.toast('👑 免小測：唔使答題，即刻出獄', 3000); release(); } };
+  return { colliders: B.cols, update, arrest, arrestQuiz, resume, active, openCut, freeQuiz, quizOpen: () => qel.style.display === 'flex', inside: p => Math.abs(p.x - X) < W + 6 && p.z > Z - D - 1 && p.z < Z + D + 8 };
 }
