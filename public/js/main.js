@@ -398,7 +398,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   });
   api.weapons = weapons;
   // 超級戰鬥直升機：停喺起點兩部 Lift 旁邊
-  const APACHE = { x: 20, z: -9, yaw: 0, c: '#4b5320' };
+  const APACHE = { x: 20, z: -9, yaw: Math.PI, c: '#4b5320' };   // 機頭向廣場：起飛時鏡頭喺後面，唔會俾樹遮住
   { const m = buildAircraft('apache', APACHE.c); m.position.set(APACHE.x, 0, APACHE.z); m.rotation.y = APACHE.yaw; scene.add(m);
     const h = new THREE.Mesh(new THREE.CircleGeometry(8, 30), new THREE.MeshBasicMaterial({ color: '#2b2f36' })); h.rotation.x = -Math.PI / 2; h.position.set(APACHE.x, 0.02, APACHE.z - 1.5); scene.add(h);
     const hc = new THREE.Mesh(new THREE.RingGeometry(6.6, 7.2, 30), new THREE.MeshBasicMaterial({ color: '#ffd54f' })); hc.rotation.x = -Math.PI / 2; hc.position.set(APACHE.x, 0.03, APACHE.z - 1.5); scene.add(hc);
@@ -2193,7 +2193,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     } else {
       me.visible = true;
       let dist = camDist * Math.max(1, P.scale * 0.8);
-      if (P.transit) dist = Math.max(dist, { taxi: 9, minibus: 11, bus: 16 }[P.transit.t.id]); else if (P.boat) dist = Math.max(dist, 13); else if (P.cable) dist = Math.max(dist, 9); else if (P.shuttle) dist = Math.max(dist, 16); else if (sky.riding()) dist = Math.max(dist, 16); else if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, { plane: 18, heli: 16, jumbo: 80, fighter: 24 }[P.flight.kind]);
+      if (P.transit) dist = Math.max(dist, { taxi: 9, minibus: 11, bus: 16 }[P.transit.t.id]); else if (P.boat) dist = Math.max(dist, 13); else if (P.cable) dist = Math.max(dist, 9); else if (P.shuttle) dist = Math.max(dist, 16); else if (sky.riding()) dist = Math.max(dist, 16); else if (P.mech) dist = Math.max(dist, 60); else if (P.flight) dist = Math.max(dist, { plane: 18, heli: 16, jumbo: 80, fighter: 24, apache: 22 }[P.flight.kind] || 20);   // 冇登記嘅機種都有預設距離，唔會變 NaN 黑畫面
       me.visible = !P.mech && !carjack.driving();
       if (carjack.driving()) dist = Math.max(dist, { fire: 15, bus: 16, truck: 13, minibus: 11 }[carjack.driving().kind] || 10);
       ray.set(target, dir); ray.far = dist;
