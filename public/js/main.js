@@ -13,7 +13,9 @@ import { buildHotel, roomDoor, ROOM_TYPES } from './hotel.js';
 import { buildPark } from './park.js';
 import { playMusic, currentMusic, TRACKS } from './music.js';
 import { buildBike, bikePose, buildCampers } from './vehicles.js';
-import { buildAirport, Flight, buildAircraft, AIR_KINDS, RUNWAY } from './airport.js';
+import { buildAirport, Flight, buildAircraft, AIR_KINDS, RUNWAY, isHeli } from './airport.js';
+import { buildWeapons } from './weapons.js';
+import { TOYS, TOY, toyModel, toyView } from './toys.js';
 import { buildArena, buildMech, animateMech, inStage, KAIJU, MECHS } from './arena.js';
 import { buildVillage, OX as VOX, OZ as VOZ } from './village.js';
 import { HKG } from './hkg_data.js';
@@ -270,6 +272,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.pickMech = () => pickMech();
   const world = buildWorld(scene, api);
   const lifts = buildLifts(scene, api);
+  CATALOG.SHOPS.hardware = { name: '柏熙五金店', en: 'Pak Hei Hardware', items: TOYS.map(t => ({ n: t.n, e: t.e, p: t.p, cat: /fire|police|fighter|apache|jumbo/.test(t.id) ? '交通工具模型' : '玩具屋設備模型', toy: t.id })) };
   const shops = buildShops(scene, api, CATALOG.SHOPS);
   const npcs = buildNPCs(scene, shops.spots);
   const hotel = buildHotel(scene, api);
@@ -303,7 +306,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.loadCity = () => city.loadAll(P.pos);
   api.blocked = () => timeLocked || jail.active() || nightLock.locked() || quiz.active() || liftFix.active();
   const liftFix = buildLiftFix({ store, sfx, say });
-  const quiz = buildQuiz({ store, sfx, say, qlog: e => api.qlog(e), onQuizOK: () => api.onQuizOK?.(), onOpen: () => { leaveAll(); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
+  const quiz = buildQuiz({ store, sfx, say, qlog: e => api.qlog(e), onQuizOK: () => api.onQuizOK?.(), onOpen: () => { flUp = flDown = false; wIn.gun = wIn.bomb = wIn.rocket = false; leaveAll({ keepFlight: true }); closeMap(); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); } });
   if (role === 'admin') { quiz.state.mode = null; quiz.state.q = null; setTimeout(() => toast('🔑 管理員登入：唔使做小測', 3500), 800); }
   else setTimeout(() => quiz.resume(), 0);
   api.boatTicket = () => boatTicket();
@@ -383,6 +386,24 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.city = city;
   const traffic = buildTraffic(scene, api);
   const events = buildEvents(scene, api);
+  // ================= 戰鬥機 / 直升機武器（機炮、炸彈、火箭，全部無限發，純屬遊戲）=================
+  const wIn = { gun: false, bomb: false, rocket: false };
+  const pointHit = p => { for (const c of nearCols(p.x, p.z, 3, false)) if (p.x > c.min[0] && p.x < c.max[0] && p.z > c.min[2] && p.z < c.max[2] && p.y > c.min[1] && p.y < c.max[1] && c.max[1] > 0.6) return c; return null; };
+  let fireMsgT = 0;
+  const weapons = buildWeapons(scene, {
+    sfx, hit: pointHit, pos: () => P.pos, shake: v => { shake = Math.max(shake, v); },
+    bombHit: (x, z) => events.bombHit(x, z),
+    onFire: () => { const now = performance.now(); if (now - fireMsgT > 6000) { fireMsgT = now; const n = events.bombFires(); toast(n > 1 ? `🔥 ${n} 棟大廈著火！${n} 架消防車趕緊嚟救火 🚒` : '🔥 大廈著火！消防車趕緊嚟救火 🚒', 3000); } },
+    onFull: () => { const now = performance.now(); if (now - fireMsgT > 6000) { fireMsgT = now; toast('🚒 消防處全部消防車出動晒！等佢哋救熄啲火先', 3000); } },
+  });
+  api.weapons = weapons;
+  // 超級戰鬥直升機：停喺起點兩部 Lift 旁邊
+  const APACHE = { x: 20, z: -9, yaw: 0, c: '#4b5320' };
+  { const m = buildAircraft('apache', APACHE.c); m.position.set(APACHE.x, 0, APACHE.z); m.rotation.y = APACHE.yaw; scene.add(m);
+    const h = new THREE.Mesh(new THREE.CircleGeometry(8, 30), new THREE.MeshBasicMaterial({ color: '#2b2f36' })); h.rotation.x = -Math.PI / 2; h.position.set(APACHE.x, 0.02, APACHE.z - 1.5); scene.add(h);
+    const hc = new THREE.Mesh(new THREE.RingGeometry(6.6, 7.2, 30), new THREE.MeshBasicMaterial({ color: '#ffd54f' })); hc.rotation.x = -Math.PI / 2; hc.position.set(APACHE.x, 0.03, APACHE.z - 1.5); scene.add(hc);
+    APACHE.m = m;
+    interactables.push({ pos: new V3(APACHE.x + 3.5, 0, APACHE.z + 1), r: 5, label: () => '🚁 揸超級戰鬥直升機（火箭 + 機炮）', act: () => startFlight('apache', APACHE.x, APACHE.z, APACHE.yaw, APACHE.c), show: () => !P.flight }); }
   api.faceOf = () => P.face;
   api.arrested = why => jail.arrestQuiz(why);
   api.quizCfg = () => quiz.cfg();
@@ -410,7 +431,8 @@ function startGame(myName, role = 'player', memberToken = '') {
   function setToiletLight(on) { toiletLight = on; world.setToiletLight(on); }
 
   // ================= 錢包 / 銀行 / 背包（存喺呢部機嘅瀏覽器）=================
-  const E = Object.assign({ cash: 100, save: 0, vault: 0, gold: 0, silver: 0, bag: {} }, store.get('econ', {}));
+  const E = Object.assign({ cash: 100, save: 0, vault: 0, gold: 0, silver: 0, bag: {}, toys: {} }, store.get('econ', {}));
+  if (!E.toys || typeof E.toys !== 'object') E.toys = {};
   P.gold = E.gold;
   const money = n => 'HK$' + (Math.round(n * 10) / 10).toLocaleString('en-HK');
   function saveEcon() {
@@ -450,7 +472,8 @@ function startGame(myName, role = 'player', memberToken = '') {
     $('shopName').textContent = `${data.name || name}${data.en ? ' ' + data.en : ''}`;
     if (!(data.items || []).length) { toast('呢間舖暫時未有貨品資料'); return; }
     renderShop(); $('shopModal').classList.remove('hidden'); sfx.click();
-    if (/parknshop|wellcome|market/.test(key)) say('Hello! Welcome to the supermarket. What would you like to buy today?', '你好！歡迎光臨超級市場，今日想買啲咩？', { key: 'shop' + key });
+    if (key === 'hardware') say('Hello! Welcome to the hardware shop. These toys are just like the ones in the toy house. Which one do you like?', '你好！歡迎光臨柏熙五金店！呢度啲玩具同柏熙玩具屋入面嘅一樣，你鍾意邊件？', { key: 'shophw' });
+    else if (/parknshop|wellcome|market/.test(key)) say('Hello! Welcome to the supermarket. What would you like to buy today?', '你好！歡迎光臨超級市場，今日想買啲咩？', { key: 'shop' + key });
     else say('Hello! Welcome. What would you like to eat? Our burgers and drinks are very nice.', '你好！歡迎光臨，想食啲咩？', { key: 'shop' + key });
   }
   function renderShop() {
@@ -487,7 +510,10 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (total > E.cash) { sfx.error(); return toast(`💸 唔夠錢！要 ${money(total)}，你得 ${money(E.cash)}。去銀行賣金條或者提錢啦`, 3500); }
     E.cash = Math.round((E.cash - total) * 10) / 10;
     let count = 0;
-    for (const [n, { it, q }] of cart) { const b = E.bag[n] || { e: it.e, c: 0, shop: shopKey, cat: it.cat }; b.c += q; E.bag[n] = b; count += q; }
+    for (const [n, { it, q }] of cart) {
+      if (it.toy) { E.toys[it.toy] = (E.toys[it.toy] || 0) + q; count += q; continue; }   // 玩具：放入背包「玩具」，可以拎出嚟欣賞
+      const b = E.bag[n] || { e: it.e, c: 0, shop: shopKey, cat: it.cat }; b.c += q; E.bag[n] = b; count += q;
+    }
     cart.clear(); saveEcon(); sfx.pickup(); renderCart();
     toast(`🧾 多謝惠顧！共 ${count} 件，${money(total)}，已放入🎒背包`, 3000);
     say(`That will be ${numWords(Math.round(total))} dollars, please. Thank you very much! Have a nice day!`, `一共 ${money(total)}，多謝惠顧！祝你有美好嘅一日！`, { force: true });
@@ -504,6 +530,16 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (E.bikeBag) row('🏍', '電單車（喺背包入面）', '🏍 拎出嚟揸', () => { closeModal('bagModal'); rideFromBag(); });
     else if (P.bike) row('🏍', '電單車（揸緊）', '🎒 收埋', () => bikeToBag());
     else { const pb = PARK.find(v => v.k === 'bike'); if (pb) row('🏍', `電單車（泊咗喺${dirName(pb.x - P.pos.x, pb.z - P.pos.z)}面 ${Math.round(Math.hypot(pb.x - P.pos.x, pb.z - P.pos.z))} 米）`, '🎒 收返入背包', () => { dropParked(pb); E.bikeBag = true; saveEcon(); toast('🎒 電單車收返入背包'); }); }
+    // 柏熙五金店買嘅玩具
+    Object.entries(E.toys).filter(([id, c]) => c > 0 && TOY[id]).forEach(([id, c]) => {
+      const t = TOY[id], d = document.createElement('div'); d.className = 'item';
+      d.innerHTML = `<span class="em">${t.e}</span><span class="nm"></span><span>x ${c}</span><span style="display:flex;gap:4px"><button class="opt" data-a="h"></button><button class="opt" data-a="v">👀 欣賞</button></span>`;
+      d.querySelector('.nm').textContent = `🧸 ${t.n}`;
+      const hb = d.querySelector('[data-a="h"]'); hb.textContent = P.held === 'toy:' + id ? '🎒 收返' : '✋ 拎喺手';
+      hb.onclick = () => { sfx.click(); holdToy(id); renderBag(); };
+      d.querySelector('[data-a="v"]').onclick = () => { closeModal('bagModal'); viewToy(id); };
+      el.appendChild(d);
+    });
     const entries = Object.entries(E.bag).filter(([, b]) => b.c > 0);
     if (!entries.length) el.insertAdjacentHTML('beforeend', '<div style="padding:10px;opacity:.7">食物 / 用品：空空如也。去餐廳或者超市買嘢啦！</div>');
     entries.forEach(([n, b]) => {
@@ -647,7 +683,8 @@ function startGame(myName, role = 'player', memberToken = '') {
   function attachHeld(av, kind) {
     const u = av.userData; if (u.heldKind === kind) return;
     u.hand.clear(); u.heldKind = kind; u.held = kind;
-    if (kind) { const m = itemMesh(kind); m.scale.setScalar(kind === 'ext' || kind === 'hose' ? 1 : 1.3); if (kind === 'ext') m.rotation.x = Math.PI / 2, m.position.z = 0.1; u.hand.add(m); }
+    if (kind && kind.startsWith('toy:')) { const m = toyModel(kind.slice(4), 0.32); m.position.set(0, -0.05, 0.12); u.hand.add(m); }
+    else if (kind) { const m = itemMesh(kind); m.scale.setScalar(kind === 'ext' || kind === 'hose' ? 1 : 1.3); if (kind === 'ext') m.rotation.x = Math.PI / 2, m.position.z = 0.1; u.hand.add(m); }
   }
   function setHeld(kind) {
     P.held = P.held === kind ? null : kind; attachHeld(me, P.held); renderInv();
@@ -663,6 +700,21 @@ function startGame(myName, role = 'player', memberToken = '') {
       b.innerHTML = `${ICON[k][0]}<small>${ICON[k][1]}</small>`; b.onclick = () => { sfx.click(); setHeld(k); };
       el.appendChild(b);
     });
+    // 手上拎住嘅玩具：撳就打開 3D 慢慢欣賞
+    const tk = P.held && P.held.startsWith('toy:') ? P.held.slice(4) : null;
+    if (tk && TOY[tk]) {
+      const b = document.createElement('button'); b.className = 'slot on';
+      b.innerHTML = `${TOY[tk].e}<small>欣賞</small>`; b.onclick = () => viewToy(tk);
+      el.appendChild(b);
+    }
+  }
+  function viewToy(id) { const v = toyView(id); if (v) { sfx.click(); learn.view(v); } }
+  function holdToy(id) {
+    if (!(E.toys[id] > 0)) return;
+    if (P.held === 'toy:' + id) { setHeld(P.held); toast(`🎒 ${TOY[id].n}收返入背包`); return; }
+    if (P.held) setHeld(P.held);
+    setHeld('toy:' + id); toast(`✋ 拎住${TOY[id].n}。撳下面「${TOY[id].e} 欣賞」可以轉嚟轉去慢慢睇`, 3500);
+    say(`You are holding a toy ${TOY[id].en.toLowerCase()}. Nice!`, `你拎住${TOY[id].n}，好靚呀！`, { gap: 6000 });
   }
 
   // ---------- Key 對話框 ----------
@@ -981,7 +1033,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   function updateHUD(inCar) {
     const a = P.pos.y;
     const inHotel = hotel.inside(P.pos);
-    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.cable ? '🚡 金色纜車' : carjack.driving() ? `🦹 揸緊搶返嚟嘅${carjack.kindName()}${carjack.chasing() ? '（🚨 警察追緊你）' : ''}` : carjack.chasing() ? '🚨 警察追緊你！' : house.inside(P.pos) ? `🏠 柏熙屋企 ${house.floorOf(P.pos) + 1} 樓` : toy.inside(P.pos) ? '🧸 柏熙玩具屋' : liftRoom.inside(P.pos) ? liftRoom.label() : tunnels.inside(P.pos) ? tunnels.label() : P.boat ? `🚢 城市河觀光船（${BOAT_SEATS[P.boat.seat].n}）` : P.shuttle ? `🚁 直通直升機 → ${P.shuttle.name}` : sky.riding() ? '🚝 空中輕軌' : mtr.riding() ? (mtr.rideInfo() ? `🚇 下一站 ${MTR_ST[mtr.rideInfo().to][0]}` : '🚇 港鐵列車') : jail.active() ? '⛓ 監倉' : mtr.inside(P.pos) ? mtr.label() : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
+    $('floorBig').textContent = inCar ? `${LIFT_DEF[inCar.id].cargo ? '貨' : '客'}Lift ${floorLabel(Math.round(inCar.floor))}F` : P.flight ? { plane: '✈ 小型飛機', heli: '🚁 直升機', jumbo: '🛫 巨無霸客機', fighter: '🛩 戰鬥機', apache: '🚁 超級戰鬥直升機' }[P.flight.kind] : P.mech ? `🤖 機甲 HP ${Math.max(0, Math.round(P.mech.hp))}` : P.seat ? `🎢 ${park.rides[P.seat.r].name}` : P.transit ? `${P.transit.t.e} ${P.transit.t.n} → ${P.transit.d.name}` : P.pass ? `🙋 坐順風車` : P.cable ? '🚡 金色纜車' : carjack.driving() ? `🦹 揸緊搶返嚟嘅${carjack.kindName()}${carjack.chasing() ? '（🚨 警察追緊你）' : ''}` : carjack.chasing() ? '🚨 警察追緊你！' : house.inside(P.pos) ? `🏠 柏熙屋企 ${house.floorOf(P.pos) + 1} 樓` : toy.inside(P.pos) ? '🧸 柏熙玩具屋' : liftRoom.inside(P.pos) ? liftRoom.label() : tunnels.inside(P.pos) ? tunnels.label() : P.boat ? `🚢 城市河觀光船（${BOAT_SEATS[P.boat.seat].n}）` : P.shuttle ? `🚁 直通直升機 → ${P.shuttle.name}` : sky.riding() ? '🚝 空中輕軌' : mtr.riding() ? (mtr.rideInfo() ? `🚇 下一站 ${MTR_ST[mtr.rideInfo().to][0]}` : '🚇 港鐵列車') : jail.active() ? '⛓ 監倉' : mtr.inside(P.pos) ? mtr.label() : P.camper >= 0 ? campers.list[P.camper].name : school.active() ? '🏫 學校數學堂' : apartments.label() ? apartments.label() : vault.inside(P.pos) ? '🔐 銀行金庫' : inHotel ? (a > 79 ? '柏熙 天台' : `柏熙 ${hotel.playerFloor(P.pos)}F`) : (a < -1 ? '機房 M' : a < 1 ? '地面 G' : `離地 ${fmtAlt(a)}`);
     $('altTxt').textContent = fmtAlt(a);
     $('layerTxt').textContent = layerName(a);
     $('onlineTxt').textContent = remotes.size + 1;
@@ -1111,6 +1163,10 @@ function startGame(myName, role = 'player', memberToken = '') {
   // ================= 電單車 / 露營車 =================
   const myBike = buildBike(); myBike.visible = false; scene.add(myBike);
   let bikeOn = false, bikeLean = 0, bikeSpin = 0;
+  const bikeSpdEl = $('bikeSpd');
+  let bikeX = [3, 6, 9].includes(store.get('bikeX', 3)) ? store.get('bikeX', 3) : 3;   // 電單車速度：行路嘅 3 / 6 / 9 倍
+  function setBikeX(x) { bikeX = x; store.set('bikeX', x); document.querySelectorAll('#bikeSpd button').forEach(b => b.classList.toggle('on', +b.dataset.x === x)); sfx.click(); toast(`🏍 電單車速度：行路嘅 ${x} 倍${x >= 6 ? '（好快！小心揸）' : ''}`, 1800); }
+  document.querySelectorAll('#bikeSpd button').forEach(b => { b.classList.toggle('on', +b.dataset.x === bikeX); b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setBikeX(+b.dataset.x); }); });
   function isIndoors() {
     const p = P.pos, tb = world.toiletBounds;
     if (P.seat || P.flight || P.mech || P.transit || P.pass || P.camper >= 0 || p.y < -1 || P.boat || P.shuttle || P.cable) return true;
@@ -1144,7 +1200,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     if (isIndoors()) return toast('🏍 要喺室外先揸得電單車');
     if (P.held) setHeld(P.held);
     E.bikeBag = false; saveEcon();
-    P.bike = true; $('btnBike').classList.add('on'); toast('🏍 揸電單車！喺室外快 3 倍；再撳 🏍 就收入背包'); say(...VEH.bike);
+    P.bike = true; $('btnBike').classList.add('on'); toast('🏍 揸電單車！畫面下面可以揀行路嘅 3 / 6 / 9 倍速度；再撳 🏍 就收入背包', 4000); say(...VEH.bike);
   }
   addEventListener('keydown', e => { if (e.code === 'KeyB' && e.target.tagName !== 'INPUT') $('btnBike').click(); });
   function enterCamper(k) {
@@ -1220,7 +1276,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     for (const k in MTR_ENTR) { const e = MTR_ENTR[k], [px, py] = w2m(e.x, e.z); if (px < -20 || px > MAP.W + 20 || py < -20 || py > MAP.H + 20) continue; g.fillStyle = '#fff'; g.strokeStyle = '#222'; g.lineWidth = 1.5; g.beginPath(); g.arc(px, py, Math.max(3, Math.min(7, 9 * s)), 0, 7); g.fill(); g.stroke(); }
     for (const st of SKY_STATIONS) { const [px, py] = w2m(st.x, st.z); g.fillStyle = '#0288d1'; g.fillRect(px - 4, py - 4, 8, 8); }
     { const pb = PARK.find(v => v.k === 'bike'); if (pb) { const [px, py] = w2m(pb.x, pb.z); g.font = '18px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🏍', px, py); } }
-    PARK.filter(v => v.k !== 'bike').forEach(v => { const [px, py] = w2m(v.x, v.z); g.font = '16px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v.k === 'heli' ? '🚁' : '✈', px, py); });
+    PARK.filter(v => v.k !== 'bike').forEach(v => { const [px, py] = w2m(v.x, v.z); g.font = '16px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(isHeli(v.k) ? '🚁' : '✈', px, py); });
     // 拉近啲就畫埋豪景花園每座樓 + 柏熙酒店
     if (s > 0.25) {
       for (const r of HKG.r) { if (r[1] <= 2.5) continue; g.strokeStyle = r[0] === 'motorway' ? '#ef6c00' : '#666'; g.lineWidth = Math.max(1, r[1] * s); g.beginPath(); for (let i = 0; i < r[3].length; i += 2) { const [px, py] = w2m(r[3][i] + VOX, r[3][i + 1] + VOZ); i ? g.lineTo(px, py) : g.moveTo(px, py); } g.stroke(); }
@@ -1388,8 +1444,8 @@ function startGame(myName, role = 'player', memberToken = '') {
   };
 
   // ================= 落晒所有交通工具（傳送 / 上堂 / 坐監之前用）=================
-  function leaveAll() {
-    if (P.seat) leaveRide(); if (P.flight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
+  function leaveAll(o = {}) {
+    if (P.seat) leaveRide(); if (P.flight && !o.keepFlight) endFlight(); if (P.mech) mechOff(); if (P.transit) endTransit(); if (P.pass) leavePass();
     if (P.boat) endBoat(false); if (P.shuttle) endShuttle(false); mtr.cancel(); sky.cancel(); P.cable = null;
     if (P.camper >= 0) { P.camper = -1; P.rideObj = null; }
     stowBike(); carjack.reset();
@@ -1399,7 +1455,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   const PARK = store.get('parked', []).filter(v => v && v.k);
   const savePark = () => store.set('parked', PARK.map(({ k, x, y, z, yaw, c, t }) => ({ k, x, y, z, yaw, c, t })));
   const HELI_KEEP = 72 * 3600e3;   // 直升機泊低 72 小時之後自動飛返機場
-  const PARK_LABEL = { plane: '✈ 揸返你架小型飛機', heli: '🚁 揸返你架直升機', jumbo: '🛫 揸返你架巨無霸', fighter: '🛩 揸返你架戰鬥機', bike: '🏍 揸返你架電單車' };
+  const PARK_LABEL = { plane: '✈ 揸返你架小型飛機', heli: '🚁 揸返你架直升機', jumbo: '🛫 揸返你架巨無霸', fighter: '🛩 揸返你架戰鬥機', apache: '🚁 揸返你架超級戰鬥直升機', bike: '🏍 揸返你架電單車' };
   function showParked(v) {
     const m = v.k === 'bike' ? buildBike() : buildAircraft(v.k, v.c || '#e53935');
     m.position.set(v.x, v.y, v.z); m.rotation.y = v.yaw; scene.add(m);
@@ -1420,8 +1476,8 @@ function startGame(myName, role = 'player', memberToken = '') {
   }
   function heliExpire(first) {
     const now = Date.now();
-    PARK.filter(v => v.k === 'heli' && (v.t || 0) && now - v.t > HELI_KEEP).forEach(v => { dropParked(v); toast('🚁 你架直升機泊咗超過 72 小時，已經自己飛返機場', 4500); });
-    if (first) PARK.forEach(v => { if (v.k === 'heli' && !v.t) v.t = now; });
+    PARK.filter(v => isHeli(v.k) && (v.t || 0) && now - v.t > HELI_KEEP).forEach(v => { dropParked(v); toast('🚁 你架直升機泊咗超過 72 小時，已經自己飛返機場', 4500); });
+    if (first) PARK.forEach(v => { if (isHeli(v.k) && !v.t) v.t = now; });
   }
   setTimeout(() => { heliExpire(true); savePark(); PARK.slice().forEach(showParked); }, 0);
   setInterval(() => heliExpire(false), 60000);
@@ -1592,8 +1648,9 @@ function startGame(myName, role = 'player', memberToken = '') {
 
   // ================= 附近有咩機械可以學英文 =================
   const learnSpots = [];
+  learnSpots.push({ x: 20, z: -9, r: 7, key: 'apache', y: 0 });   // 起點超級戰鬥直升機
   setTimeout(() => {
-    const kindOf = l => /巨無霸/.test(l) ? 'jumbo' : /戰鬥機/.test(l) ? 'fighter' : /直升機/.test(l) ? 'heli' : /飛機/.test(l) ? 'plane' : /的士/.test(l) ? 'taxi' : /小巴/.test(l) ? 'minibus' : /巴士/.test(l) ? 'bus' : null;
+    const kindOf = l => /巨無霸/.test(l) ? 'jumbo' : /戰鬥直升機/.test(l) ? 'apache' : /戰鬥機/.test(l) ? 'fighter' : /直升機/.test(l) ? 'heli' : /飛機/.test(l) ? 'plane' : /的士/.test(l) ? 'taxi' : /小巴/.test(l) ? 'minibus' : /巴士/.test(l) ? 'bus' : null;
     airport.interactables.concat(stand.interactables, shuttleStand.interactables, lohas.interactables).forEach(it => { const k = kindOf(it.label()); if (k) learnSpots.push({ x: it.pos.x, y: it.pos.y, z: it.pos.z, r: k === 'jumbo' ? 16 : 7, key: k }); });
     acDisplay.spots.forEach(a => learnSpots.push({ ...a, y: 0, r: 3.2 }));
     hotel.learnSpots.forEach(a => learnSpots.push(a));
@@ -1642,7 +1699,7 @@ function startGame(myName, role = 'player', memberToken = '') {
   api.onRelease = () => say('You are free now. Remember: red means stop, green means go!', '你可以走喇。記住：紅燈停，綠燈行！', { force: true });
 
   // ================= 搭順風車：坐其他玩家架電單車 / 飛機（每架最多載 1 個人）=================
-  const VEH_NAME = s => s.bk ? '電單車尾座' : s.fl ? ({ plane: '小型飛機', heli: '直升機', jumbo: '巨無霸', fighter: '戰鬥機' }[AIR_KINDS[s.fl[0]]] || '飛機') + '後座' : '';
+  const VEH_NAME = s => s.bk ? '電單車尾座' : s.fl ? ({ plane: '小型飛機', heli: '直升機', jumbo: '巨無霸', fighter: '戰鬥機', apache: '超級戰鬥直升機' }[AIR_KINDS[s.fl[0]]] || '飛機') + '後座' : '';
   function riderTaken(id) { for (const r of remotes.values()) if (r.st && r.st.ps === id && r.id !== id) return true; return false; }
   function passInteract() {
     if (P.pass || P.transit || P.flight || P.mech || P.seat || P.camper >= 0) return null;
@@ -1682,6 +1739,8 @@ function startGame(myName, role = 'player', memberToken = '') {
   let flUp = false, flDown = false;
   const holdBtn = (id, on) => { const b = $(id); const set = v => e => { on(v); e.preventDefault(); }; b.addEventListener('pointerdown', set(true)); ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => b.addEventListener(t, set(false))); };
   holdBtn('flUp', v => flUp = v); holdBtn('flDown', v => flDown = v);
+  holdBtn('flGun', v => wIn.gun = v); holdBtn('flBomb', v => wIn.bomb = v); holdBtn('flRocket', v => wIn.rocket = v);
+  const wKeys = { gun: false, bomb: false, rocket: false };
   $('flExit').onclick = () => exitFlight();
   function startFlight(kind, x, z, yaw, color, y = 0) {
     if (P.seat) leaveRide(); if (P.mech) mechOff(); P.camper = -1; stowBike();
@@ -1692,8 +1751,12 @@ function startGame(myName, role = 'player', memberToken = '') {
     F.seat = new THREE.Object3D(); F.seat.position.copy(F.model.userData.seat); F.model.add(F.seat);
     P.flight = F; firstPerson = false; $('btnFP').classList.remove('on'); camPitch = 0.2; camYaw = yaw + Math.PI;
     $('flightPanel').classList.remove('hidden'); $('rbtn').classList.add('hidden'); sfx.whoosh();
+    const armed = kind === 'fighter' || isHeli(kind);
+    $('flGun').classList.toggle('hidden', !armed); $('flBomb').classList.toggle('hidden', !armed); $('flRocket').classList.toggle('hidden', kind !== 'apache');
     const vt = { plane: 100, jumbo: 220, fighter: 230 }[kind];
-    toast(kind !== 'heli' ? `✈ 撳住右下角「⬆」加油門，去到 ${vt} km/h 再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降` : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n喺邊度都可以降落；落機後會泊喺度 72 小時', 6000);
+    if (kind === 'apache') return toast('🚁 超級戰鬥直升機！撳住「⬆」升高、「⬇」降落，搖桿前後左右飛（好快！）\n🔫 機炮、💣 炸彈、🚀 火箭全部無限發（純屬遊戲）', 7000);
+    if (armed) setTimeout(() => P.flight && toast('🔫 撳住「射子彈」、💣「掉炸彈」：全部無限發（純屬遊戲）\n炸中大廈會起火，消防車會趕嚟救', 5000), 6200);
+    toast(!isHeli(kind) ? `✈ 撳住右下角「⬆」加油門，去到 ${vt} km/h 再拉搖桿向後就起飛\n搖桿左右轉彎；只可以喺公路或者機場升降` : '🚁 撳住「⬆」升高、「⬇」降落，搖桿前後左右飛\n喺邊度都可以降落；落機後會泊喺度 72 小時', 6000);
   }
   function endFlight(noPark) {
     const F = P.flight; if (!F) return; scene.remove(F.model);
@@ -1702,7 +1765,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     const F = P.flight; if (!F) return;
     if (!(F.ground && F.speed < 3)) return toast('要停喺地面先落得機');
     const side = new V3(Math.cos(F.yaw), 0, -Math.sin(F.yaw));
-    const p = F.pos.clone().addScaledVector(side, { plane: 6.5, heli: 3.5, jumbo: 12, fighter: 4.5 }[F.kind]);
+    const p = F.pos.clone().addScaledVector(side, { plane: 6.5, heli: 3.5, jumbo: 12, fighter: 4.5, apache: 4 }[F.kind]);
     endFlight(); api.teleport(p.x, p.y + 0.1, p.z); sfx.door(); toast('🚶 落咗機。架機泊咗喺度，下次行返嚟撳「揸返」就得', 3500);
   }
   function crashFlight() {
@@ -1886,7 +1949,7 @@ function startGame(myName, role = 'player', memberToken = '') {
       bikeOn = nowBike; }
     if (carjack.driving() && isIndoors()) carjack.leave();
     const jackOn = !!carjack.driving();
-    const speed = P.mech ? 16 : (bikeOn ? 22 : jackOn ? ({ fire: 20, truck: 20, bus: 18, minibus: 22 }[carjack.driving().kind] || 24) : 7.5) * (0.7 + 0.3 * P.scale);
+    const speed = P.mech ? 16 : (bikeOn ? 7.5 * bikeX : jackOn ? ({ fire: 20, truck: 20, bus: 18, minibus: 22 }[carjack.driving().kind] || 24) : 7.5) * (0.7 + 0.3 * P.scale);
     const mv = fwd.multiplyScalar(iy * speed).addScaledVector(right, ix * speed);
     if (P.mech && P.mech.dash && P.mech.dash.t > 0) { mv.x += P.mech.dash.vx; mv.z += P.mech.dash.vz; P.mech.dash.t -= dt; }
     let turn = 0;
@@ -1904,7 +1967,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     else if (P.flight) {
       // 揸緊飛機 / 直升機
       const F = P.flight;
-      const ev = F.step(dt, { x: ix, y: iy, up: keys.Space || flUp, down: keys.KeyC || keys.ShiftLeft || flDown, camYaw }, flightHit);
+      const ev = quiz.active() ? (F._lastEv || null) : F.step(dt, { x: ix, y: iy, up: keys.Space || flUp, down: keys.KeyC || keys.ShiftLeft || flDown, camYaw }, flightHit);
       if (ev === 'crash') crashFlight();
       else if (ev && ev !== P.flight._lastEv) {
         const msg = { offroad: '🛑 呢度唔係公路 / 機場：唔會爆，但只可以慢慢滑行，返去公路先起飛得', noland: '🚁 呢度唔可以降落：要喺公路、機場或者停機坪', bump: '💥 撞到嘢！飛機彈開咗（唔會爆）', hard: '🛬 砰！硬著陸，不過飛機冇事', soft: '🛬 安全降落咗（唔喺公路，要慢慢滑行返公路先起飛）', roof: '🏢 停咗喺天台，冇事' }[ev];
@@ -1918,7 +1981,7 @@ function startGame(myName, role = 'player', memberToken = '') {
         if (m.userData.prop) m.userData.prop.rotation.z = F.spin; if (m.userData.rotor) { m.userData.rotor.rotation.y = F.spin; m.userData.tail.rotation.x = F.spin * 1.5; }
         P.pos.copy(F.pos); P.vy = 0; P.grounded = true; P.fallFrom = P.pos.y; P.face = F.yaw;
         seatWorld(F.seat); me.position.copy(seatP); me.quaternion.copy(seatQ); me.scale.setScalar(1); sitPose(me, dt, false);
-        $('flInfo').textContent = `${{ plane: '✈', heli: '🚁', jumbo: '🛫', fighter: '🛩' }[F.kind]} 速度 ${Math.round(F.speed * 3.6)} km/h ｜ 高度 ${Math.round(F.pos.y)} 米${F.kind !== 'heli' ? ` ｜ 油門 ${Math.round(F.throttle * 100)}%` : ''}${F.ground ? ' ｜ 喺地面' : ''}`;
+        $('flInfo').textContent = `${{ plane: '✈', heli: '🚁', jumbo: '🛫', fighter: '🛩', apache: '🚁' }[F.kind]} 速度 ${Math.round(F.speed * 3.6)} km/h ｜ 高度 ${Math.round(F.pos.y)} 米${!isHeli(F.kind) ? ` ｜ 油門 ${Math.round(F.throttle * 100)}%` : ''}${F.ground ? ' ｜ 喺地面' : ''}`;
         if (ptrs.size === 0) { let d = F.yaw + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt * 1.5); }
       }
     } else if (P.seat) {
@@ -1937,6 +2000,10 @@ function startGame(myName, role = 'player', memberToken = '') {
         physics(dt, c.rotL(mv), c.cols);
         P.lp.copy(P.pos); c.toWorld(P.lp, P.pos);
         if (Math.abs(P.lp.x) > 1.6 || Math.abs(P.lp.z) > 4.6 || P.lp.y < 0.2) { P.camper = -1; P.rideObj = null; P.fallFrom = P.pos.y; toast(`🚶 落咗${c.name.slice(3)}`); }
+      } else if (bikeOn && bikeX > 3) {
+        // 電單車開到 6 / 9 倍：分幾細步計碰撞，費事穿牆
+        const n = Math.min(8, Math.ceil(Math.hypot(mv.x, mv.z) * dt / 0.6));
+        for (let i = 0; i < n; i++) physics(dt / n, mv);
       } else physics(dt, mv);
       P.anim = !P.grounded && P.vy < -12 ? 2 : (mv.lengthSq() > 0.01 ? 1 : 0);
       me.position.copy(P.pos); me.rotation.set(0, P.face, 0); me.scale.setScalar(P.scale);
@@ -1957,6 +2024,9 @@ function startGame(myName, role = 'player', memberToken = '') {
     }
     myMech.visible = !!P.mech;
     // 交通燈、車、城市突發事件
+    // 武器：J 機炮、K 炸彈、L 火箭（手機用畫面掣）；小測期間唔會射
+    { const fl = P.flight && !quiz.active() ? P.flight : null; wKeys.gun = wIn.gun || !!keys.KeyJ; wKeys.bomb = wIn.bomb || !!keys.KeyK; wKeys.rocket = wIn.rocket || !!keys.KeyL; weapons.update(dt, fl, wKeys); }
+    bikeSpdEl.classList.toggle('hidden', !bikeOn);
     { const tr = traffic.update(dt, T, P.pos, bikeOn || jackOn);
       if (tr.red) redLight();
       if (tr.honk) { honkT -= dt; if (honkT <= 0) { honkT = 4; sfx.horn(); } } else honkT = 0.8; }
@@ -1976,7 +2046,7 @@ function startGame(myName, role = 'player', memberToken = '') {
     { const v = trTmp.copy(P.pos).sub(lastRam).divideScalar(Math.max(dt, 1e-3)); lastRam.copy(P.pos);
       const sp = Math.hypot(v.x, v.z), can = (bikeOn || jackOn || P.mech || (P.flight && P.pos.y < 30)) && sp > (P.mech ? 1 : 4) && sp < 400;
       if (can) {
-        const R = P.mech ? 7 : jackOn ? 2.4 : P.flight ? ({ jumbo: 9, plane: 4, fighter: 4, heli: 4 }[P.flight.kind]) : 1.1;
+        const R = P.mech ? 7 : jackOn ? 2.4 : P.flight ? ({ jumbo: 9, plane: 4, fighter: 4, heli: 4, apache: 5 }[P.flight.kind]) : 1.1;
         const n = traffic.knock(P.pos, v, R) + events.knock(P.pos, v, R) + sky.knock(P.pos, v, R);
         if (n) { sfx.boom(); shake = Math.max(shake, 0.5); toast(n > 1 ? `💥 一下撞飛咗 ${n} 架車！` : '💥 撞飛咗！', 1500); say('Crash! Boom! Look out!', '撞飛咗！小心呀！', { gap: 8000 }); }
       } }

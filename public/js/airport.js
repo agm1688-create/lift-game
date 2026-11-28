@@ -103,8 +103,51 @@ export function buildFighter(color = '#607d8b') {
   g.userData = { seat: new V3(0, 2.0, 3.4), kind: 'fighter', flame };
   return g;
 }
-export function buildAircraft(kind, color) { return kind === 'heli' ? buildHeli(color) : kind === 'jumbo' ? buildJumbo(color) : kind === 'fighter' ? buildFighter(color) : buildPlane(color); }
-export const AIR_KINDS = ['plane', 'heli', 'jumbo', 'fighter'];
+// 超級戰鬥直升機（原創設計：雙人前後座、短翼火箭巢、機頭機炮、四片主旋翼）
+export function buildApache(color = '#4b5320') {
+  const g = new THREE.Group(), c = std(color, { metalness: 0.35, roughness: 0.55 }), dark = std('#1f2421', { metalness: 0.5 }), black = std('#111');
+  const glass = new THREE.MeshStandardMaterial({ color: '#3a5f6f', transparent: true, opacity: 0.6, metalness: 0.6, roughness: 0.1 });
+  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0, p = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); o.castShadow = true; p.add(o); return o; };
+  add(new THREE.BoxGeometry(1.5, 1.6, 6.2), c, 0, 1.9, 0.2);                                         // 機身（窄身有角）
+  add(new THREE.CylinderGeometry(0.55, 0.75, 1.6, 6), c, 0, 1.75, 3.7, Math.PI / 2);                 // 機頭
+  add(new THREE.BoxGeometry(1.2, 0.75, 1.5), glass, 0, 2.95, 2.4, -0.18);                            // 前座艙罩（低）
+  add(new THREE.BoxGeometry(1.25, 0.9, 1.6), glass, 0, 3.15, 0.85, -0.12);                           // 後座艙罩（高啲）
+  add(new THREE.BoxGeometry(1.9, 1.0, 2.6), c, 0, 2.35, -0.6);                                       // 引擎艙
+  [-1, 1].forEach(s => add(new THREE.CylinderGeometry(0.42, 0.42, 1.8, 10), dark, s * 1.05, 2.55, -0.8, Math.PI / 2));   // 兩邊引擎
+  add(new THREE.CylinderGeometry(0.22, 0.45, 6.4, 8), c, 0, 2.3, -5.0, Math.PI / 2);                // 尾桁
+  add(new THREE.BoxGeometry(0.14, 2.1, 1.1), c, 0, 3.1, -8.0, -0.25);                                // 垂直尾翼
+  add(new THREE.BoxGeometry(2.6, 0.08, 0.7), c, 0, 2.3, -7.6);                                       // 水平尾翼
+  const tail = new THREE.Group(); tail.position.set(-0.25, 3.4, -8.1); g.add(tail);
+  [0, Math.PI / 4, Math.PI / 2, Math.PI * 3 / 4].forEach(r => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.6, 0.12), dark); b.rotation.x = r; tail.add(b); });
+  // 短翼 + 火箭巢 + 飛彈架
+  const pods = [];
+  [-1, 1].forEach(s => {
+    add(new THREE.BoxGeometry(2.4, 0.14, 0.9), c, s * 1.9, 1.9, 0.6, 0, 0, s * -0.06);
+    const pod = add(new THREE.CylinderGeometry(0.36, 0.36, 1.7, 12), dark, s * 1.75, 1.45, 0.75, Math.PI / 2);
+    add(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 12), black, s * 1.75, 1.45, 1.61, Math.PI / 2);
+    for (let k = 0; k < 2; k++) add(new THREE.CylinderGeometry(0.1, 0.1, 1.3, 8), std('#d7ccc8'), s * (2.55 + k * 0.28), 1.6, 0.7, Math.PI / 2);
+    pods.push(new V3(s * 1.75, 1.45, 1.7)); pod.userData.side = s;
+  });
+  // 機頭機炮（轉塔）
+  add(new THREE.SphereGeometry(0.32, 10, 8), dark, 0, 1.0, 3.2);
+  add(new THREE.CylinderGeometry(0.07, 0.07, 1.5, 8), black, 0, 0.95, 4.0, Math.PI / 2);
+  // 主旋翼（四片）
+  add(new THREE.CylinderGeometry(0.16, 0.2, 0.7, 10), dark, 0, 3.2, -0.3);
+  const rotor = new THREE.Group(); rotor.position.set(0, 3.6, -0.3); g.add(rotor);
+  [0, Math.PI / 2].forEach(r => { const b = new THREE.Mesh(new THREE.BoxGeometry(12.5, 0.05, 0.38), black); b.rotation.y = r; rotor.add(b); });
+  // 起落架（兩個主輪 + 尾輪）
+  [-1, 1].forEach(s => { add(new THREE.BoxGeometry(0.1, 0.9, 0.1), dark, s * 1.0, 0.75, 1.6, 0, 0, s * 0.35); add(new THREE.CylinderGeometry(0.35, 0.35, 0.22, 12), black, s * 1.25, 0.35, 1.6, 0, 0, Math.PI / 2); });
+  add(new THREE.CylinderGeometry(0.18, 0.18, 0.14, 10), black, 0, 0.75, -7.4, 0, 0, Math.PI / 2);
+  // 機身號碼（原創，冇真實標誌）
+  const num = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.45), signMat('PH-28', color, '#e8e8e8', 'bold 70px sans-serif'));
+  num.position.set(0.76, 2.0, -2.2); num.rotation.y = Math.PI / 2; g.add(num);
+  const num2 = num.clone(); num2.position.x = -0.76; num2.rotation.y = -Math.PI / 2; g.add(num2);
+  g.userData = { rotor, tail, seat: new V3(0, 2.15, 0.85), kind: 'apache', gun: new V3(0, 0.95, 4.8), pods };
+  return g;
+}
+export function buildAircraft(kind, color) { return kind === 'heli' ? buildHeli(color) : kind === 'apache' ? buildApache(color) : kind === 'jumbo' ? buildJumbo(color) : kind === 'fighter' ? buildFighter(color) : buildPlane(color); }
+export const AIR_KINDS = ['plane', 'heli', 'jumbo', 'fighter', 'apache'];
+export const isHeli = k => k === 'heli' || k === 'apache';
 
 // ---------- 機場 ----------
 export function buildAirport(scene, api) {
@@ -195,14 +238,14 @@ export function buildAirport(scene, api) {
   // 玩家機隊（撳就有自己一架）
   const fleet = [];
   ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#ff7043', '#8e24aa', '#00acc1', '#f06292', '#6d4c41', '#ffffff'].forEach((c, k) => fleet.push(['plane', 2100 + k * 30, 40, c, Math.PI]));
-  ['#c62828', '#1565c0', '#2e7d32', '#ff8f00'].forEach((c, k) => fleet.push(['jumbo', 2160 + k * 130, 140, c, 0]));
+  ['#c62828', '#1565c0', '#2e7d32', '#ff8f00'].forEach((c, k) => fleet.push(['jumbo', 2160 + k * 130, 140, c, Math.PI]));   // 機頭向跑道，方便直接揸出去
   ['#607d8b', '#37474f'].forEach((c, k) => fleet.push(['fighter', 1985, -68 + k * 22, c, Math.PI / 2]));   // 停喺跑道西端，對正跑道
   HELI_SPOTS.forEach((x, k) => fleet.push(['heli', x, 60, ['#1565c0', '#6a1b9a', '#c62828', '#00897b'][k], 0]));
   const LABEL = { plane: '✈ 揸小型飛機', jumbo: '🛫 揸巨無霸客機', fighter: '🛩 揸戰鬥機', heli: '🚁 揸直升機' };
   fleet.forEach(([kind, x, z, c, ry]) => {
     const m = buildAircraft(kind, c); m.position.set(x, 0, z); m.rotation.y = ry; root.add(m);
     if (kind === 'heli') { const h = new THREE.Mesh(new THREE.CircleGeometry(8, 30), signMat('H', '#2b2f36', '#ffd54f', 'bold 90px sans-serif')); h.rotation.x = -Math.PI / 2; h.position.set(x, 0.03, z); root.add(h); }
-    const off = kind === 'jumbo' ? [10, -20] : kind === 'fighter' ? [0, 6] : [4, 0];
+    const off = kind === 'jumbo' ? [-10, 20] : kind === 'fighter' ? [0, 6] : [4, 0];
     inter.push({ pos: new V3(x + off[0] + DX, 0, z + off[1] + DZ), r: kind === 'jumbo' ? 8 : 4, label: () => LABEL[kind], act: () => api.startFlight(kind, x + DX, z + DZ, ry, c) });
   });
   const sg = new THREE.Mesh(new THREE.PlaneGeometry(30, 3), signMat('✈ 自助租飛機：行埋去撳「揸」', '#0d47a1')); sg.position.set(2240, 4, 15); root.add(sg);
@@ -228,13 +271,14 @@ export class Flight {
     this.fp = FP[kind] || FP.plane;
     this.kind = kind; this.pos = new V3(x, 0, z); this.yaw = yaw; this.pitch = 0; this.roll = 0; this.speed = 0; this.vy = 0; this.throttle = 0;
     this.vel = new V3(); this.ground = true; this.spin = 0; this.groundY = 0;
+    this.heli = isHeli(kind);   // 直升機 / 超級戰鬥直升機
   }
   // inp: { x, y (搖桿)、up、down、camYaw }；返回 'crash' / 'blocked' / null
   step(dt, inp, hit) {
     const p = this.pos;
     let ev = null;
     const fp = this.fp;
-    if (this.kind !== 'heli') {
+    if (!this.heli) {
       this.throttle = Math.max(0, Math.min(1, this.throttle + ((inp.up ? 1 : 0) - (inp.down ? 1 : 0)) * 0.6 * dt));
       const target = this.throttle * fp.max;
       this.speed += Math.max(-Math.max(6, fp.acc * 0.6) * dt, Math.min(fp.acc * dt, target - this.speed));
@@ -256,13 +300,14 @@ export class Flight {
     } else {
       // 直升機：搖桿 = 前後左右（跟鏡頭）、↑↓ = 升降
       const fx = -Math.sin(inp.camYaw), fz = -Math.cos(inp.camYaw), rx = Math.cos(inp.camYaw), rz = -Math.sin(inp.camYaw);
-      const tx = (fx * inp.y + rx * inp.x) * 32, tz = (fz * inp.y + rz * inp.x) * 32, ty = ((inp.up ? 1 : 0) - (inp.down ? 1 : 0)) * 9;
+      const HS = this.kind === 'apache' ? 85 : 32, VS = this.kind === 'apache' ? 20 : 9;   // 超級戰鬥直升機飛得快好多
+      const tx = (fx * inp.y + rx * inp.x) * HS, tz = (fz * inp.y + rz * inp.x) * HS, ty = ((inp.up ? 1 : 0) - (inp.down ? 1 : 0)) * VS;
       const k = Math.min(1, dt * 1.6);
       if (this.ground && ty <= 0) { this.vel.x *= 0.8; this.vel.z *= 0.8; this.vel.y = 0; }
       else { this.vel.x += (tx - this.vel.x) * k; this.vel.z += (tz - this.vel.z) * k; this.vel.y += (ty - this.vel.y) * Math.min(1, dt * 3); }
       const hs = Math.hypot(this.vel.x, this.vel.z);
       if (hs > 2) { let d = Math.atan2(this.vel.x, this.vel.z) - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); this.yaw += d * Math.min(1, dt * 2); }
-      this.pitch = -Math.min(0.3, hs / 32 * 0.3); this.roll = 0;
+      this.pitch = -Math.min(0.3, hs / HS * 0.3); this.roll = 0;
       this.spin += (this.ground && ty <= 0 ? 8 : 30) * dt;
       this.speed = hs;
     }
@@ -278,7 +323,7 @@ export class Flight {
         p.copy(next); return ev;
       }
       this.vel.set(0, Math.min(0, this.vel.y), 0);
-      if (this.kind !== 'heli' && !this.ground) { this.yaw += Math.PI; this.speed *= 0.35; }
+      if (!this.heli && !this.ground) { this.yaw += Math.PI; this.speed *= 0.35; }
       else this.speed = 0;
       return 'bump';
     }
@@ -286,19 +331,19 @@ export class Flight {
     const floor = this.groundAt(next);
     if (next.y <= floor) {
       if (!this.ground) {
-        const ok = canLand(next.x, next.z, this.kind === 'heli', floor);
-        if (!ok && this.kind === 'heli') { next.y = floor + 2.5; this.vel.y = 0; ev = 'noland'; }
+        const ok = canLand(next.x, next.z, this.heli, floor);
+        if (!ok && this.heli) { next.y = floor + 2.5; this.vel.y = 0; ev = 'noland'; }
         else {
           if (this.vel.y < -fp.crashV || Math.abs(this.roll) > 0.5) ev = 'hard'; else if (!ok) ev = 'soft';
           this.ground = true; next.y = floor; this.vel.y = 0; this.pitch = 0; this.roll = 0;
         }
       } else next.y = floor;
       // 唔喺公路 / 機場：唔會爆，但只可以慢慢滑行返去公路先起飛
-      if (this.ground && this.kind !== 'heli' && !canLand(next.x, next.z, false, floor)) {
+      if (this.ground && !this.heli && !canLand(next.x, next.z, false, floor)) {
         const cap = 12; if (this.speed > cap) { this.speed = cap; this.throttle = Math.min(this.throttle, cap / fp.max); ev = ev || 'offroad'; }
       }
     } else if (next.y > floor + 0.3) this.ground = false;
-    const altMax = this.kind === 'heli' ? 4000 : fp.alt; if (next.y > altMax) { next.y = altMax; this.vel.y = Math.min(0, this.vel.y); }
+    const altMax = this.heli ? 4000 : fp.alt; if (next.y > altMax) { next.y = altMax; this.vel.y = Math.min(0, this.vel.y); }
     p.copy(next);
     return ev;
   }

@@ -85,6 +85,7 @@ export const VEH = {
   bike: ['This is a motorbike. Remember to wear a helmet!', '呢架係電單車（motorbike），記得戴頭盔！'],
   plane: ['This is a small plane. Push the throttle to take off!', '呢架係小型飛機（plane），加油門就可以起飛！'],
   heli: ['This is a helicopter. The rotor on top goes round and round.', '呢架係直升機（helicopter），頂頭個螺旋槳會一直轉。'],
+  apache: ['This is an attack helicopter. It is very fast and it has rockets and a gun. This is only a game!', '呢架係超級戰鬥直升機（attack helicopter），飛得好快，有火箭同機炮。純屬遊戲！'],
   jumbo: ['This is a jumbo jet. It can carry four hundred passengers.', '呢架係巨無霸客機（jumbo jet），可以載四百個乘客。'],
   fighter: ['This is a fighter jet. It can fly faster than sound!', '呢架係戰鬥機（fighter jet），飛得比聲音仲快！'],
   taxi: ['This is a taxi. Where would you like to go?', '呢架係的士（taxi），你想去邊度？'],

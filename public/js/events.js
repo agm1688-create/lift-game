@@ -50,7 +50,7 @@ export function buildEvents(scene, api) {
     m.frustumCulled = false; scene.add(m);
     return { m, pos, vel: new Float32Array(n * 3), life: new Float32Array(n), n, i: 0 };
   }
-  const flame = particles(320, '#ff7a1a', 2.6, THREE.AdditiveBlending), smoke = particles(220, '#5b5b5b', 5.5), water = particles(220, '#bfe6ff', 0.6);
+  const flame = particles(520, '#ff7a1a', 2.6, THREE.AdditiveBlending), smoke = particles(320, '#5b5b5b', 5.5), water = particles(360, '#bfe6ff', 0.6);
   smoke.m.material.opacity = 0.5;
   function emit(P, x, y, z, vx, vy, vz, life) { const i = P.i++ % P.n; P.pos[i * 3] = x; P.pos[i * 3 + 1] = y; P.pos[i * 3 + 2] = z; P.vel[i * 3] = vx; P.vel[i * 3 + 1] = vy; P.vel[i * 3 + 2] = vz; P.life[i] = life; }
   function stepP(P, dt, grav) {
@@ -138,6 +138,91 @@ export function buildEvents(scene, api) {
       if (helped) api.reward(150);
       endFire();
     } else if (Math.hypot(p.x - F.face.x, p.z - F.face.z) > 900 || F.t > 240) endFire();
+  }
+  // ---------- 炸彈 / 火箭炸中大廈：大廈起火，消防車趕嚟救（同時最多 6 場火、6 架消防車，費事手機卡）----------
+  const BF_MAX = 6, bfires = [], bTrucks = [];
+  const bfLight = new THREE.PointLight('#ff6a1a', 0, 80); scene.add(bfLight);
+  function buildingAt(x, z, R = 12) {
+    let best = null, bd = R;
+    for (const c of api.city.chunks.values()) {
+      if (!c.plan) continue;
+      for (const b of c.plan.b) {
+        if (b.top || b.y1 < 3) continue;
+        const d = Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+        if (d < bd) { bd = d; best = { b, c: c.plan }; }
+      }
+    }
+    return best;
+  }
+  // 搵大廈近馬路嗰幅牆（火頭）同消防車停車位
+  function siteOf(b, c, hint) {
+    const bx = (b.x0 + b.x1) / 2, bz = (b.z0 + b.z1) / 2, opts = [];
+    [lineOf(b.x0), lineOf(b.x1), c.cx].forEach(L => opts.push({ v: true, L, d: Math.min(Math.abs(L - b.x0), Math.abs(L - b.x1)) }));
+    [lineOf(b.z0), lineOf(b.z1), c.cz].forEach(L => opts.push({ v: false, L, d: Math.min(Math.abs(L - b.z0), Math.abs(L - b.z1)) }));
+    opts.sort((a, b2) => a.d - b2.d); const r = opts[0];
+    const fy = Math.max(2, Math.min(b.y1 - 1.5, 4 + Math.random() * 8));
+    const hx = Math.min(b.x1 - 1, Math.max(b.x0 + 1, hint.x)), hz = Math.min(b.z1 - 1, Math.max(b.z0 + 1, hint.z));
+    let face, stand;
+    if (r.v) { const fx = r.L < bx ? b.x0 : b.x1, s = Math.sign(r.L - bx) || 1; face = new V3(fx + s * 0.3, fy, hz); stand = new V3(r.L - s * 1.5, 0, hz); }
+    else { const fz = r.L < bz ? b.z0 : b.z1, s = Math.sign(r.L - bz) || 1; face = new V3(hx, fy, fz + s * 0.3); stand = new V3(hx, 0, r.L - s * 1.5); }
+    return { face, stand, w: r.v ? 0 : 1 };
+  }
+  // 返回：'fire' 新起火 / 'more' 火燒得更大 / 'full' 消防處出動晒 / 'none' 附近冇大廈
+  function bombHit(x, z) {
+    const k = buildingAt(x, z);
+    if (!k) return 'none';
+    const same = bfires.find(f => f.b === k.b);
+    if (same) { same.hp = Math.min(200, same.hp + 40); same.t = Math.min(same.t, 30); return 'more'; }
+    if (fire && fire.face && Math.abs(fire.face.x - (k.b.x0 + k.b.x1) / 2) < (k.b.x1 - k.b.x0) / 2 + 2 && Math.abs(fire.face.z - (k.b.z0 + k.b.z1) / 2) < (k.b.z1 - k.b.z0) / 2 + 2) { fire.hp = Math.min(200, fire.hp + 40); return 'more'; }
+    if (bfires.length >= BF_MAX) { const w = bfires.reduce((a, f) => f.hp < a.hp ? f : a); w.hp = Math.min(200, w.hp + 30); return 'full'; }
+    const s = siteOf(k.b, k.c, { x, z });
+    // 消防車由附近（150–260 米外）沿馬路開過嚟
+    const from = { x: s.stand.x + (Math.random() < 0.5 ? -1 : 1) * rand(150, 260), z: s.stand.z + (Math.random() < 0.5 ? -1 : 1) * rand(100, 200) };
+    if (inExcl(from.x, from.z) || Math.abs(from.x) > HALF_WORLD - 150 || Math.abs(from.z) > HALF_WORLD - 150) { from.x = s.stand.x; from.z = s.stand.z + (s.stand.z > 0 ? -200 : 200); }
+    let R; try { R = planRoute(from, { x: s.stand.x, z: s.stand.z }, TOWN); } catch { R = null; }
+    let tr = bTrucks.find(t => !t.userData.busy);
+    if (!tr) { tr = buildFireTruck(); scene.add(tr); bTrucks.push(tr); }
+    tr.userData.busy = true; tr.visible = true;
+    if (R && R.pts && R.pts.length) tr.position.copy(R.pts[0]); else tr.position.copy(s.stand);
+    bfires.push({ b: k.b, ...s, R, s: 0, hp: 100, t: 0, truck: tr, arrived: !R, sirenT: 0, outT: 0 });
+    if (bfires.length === 1 || Math.random() < 0.4) api.sfx.firebell(1);
+    return 'fire';
+  }
+  function updateBombFires(dt, p) {
+    let lit = null, ld = 1e9;
+    for (let i = bfires.length - 1; i >= 0; i--) {
+      const F = bfires[i], tr = F.truck; F.t += dt;
+      if (F.hp <= 0) {   // 救熄咗：消防車停多陣先走
+        F.outT += dt; if (F.outT > 4) { tr.visible = false; tr.userData.busy = false; bfires.splice(i, 1); }
+        continue;
+      }
+      const d = Math.hypot(p.x - F.face.x, p.z - F.face.z);
+      const k = Math.max(0.2, Math.min(1.6, F.hp / 100)), per = d < 400 ? Math.max(2, 7 / Math.max(1, bfires.length / 2)) * k : 0;
+      for (let n = 0; n < per; n++) emit(flame, F.face.x + rand(-2.5, 2.5) * (F.w ? 1 : 0.2), F.face.y + rand(-1, 1.5), F.face.z + rand(-2.5, 2.5) * (F.w ? 0.2 : 1), rand(-0.6, 0.6), rand(2, 5), rand(-0.6, 0.6), rand(0.5, 1.1));
+      if (d < 600 && Math.random() < 0.45) emit(smoke, F.face.x + rand(-2, 2), F.face.y + 3, F.face.z + rand(-2, 2), rand(-0.5, 0.5) + 1.2, rand(4, 7), rand(-0.5, 0.5), rand(4, 8));
+      if (d < ld) { ld = d; lit = F; }
+      const flash = Math.floor(F.t * 6) % 2; tr.userData.lights[0].emissiveIntensity = flash ? 3 : 0.2; tr.userData.lights[1].emissiveIntensity = flash ? 0.2 : 3;
+      if (!F.arrived) {
+        F.s += 24 * dt;
+        const yaw = routeAt(F.R, F.s, tr.position); tr.rotation.y = yaw;
+        tr.userData.wheels.forEach(w => w.rotation.x += 24 * dt / 0.5);
+        F.sirenT -= dt; if (F.sirenT <= 0 && Math.hypot(tr.position.x - p.x, tr.position.z - p.z) < 200) { F.sirenT = 1.6; api.sfx.siren(); }
+        if (F.s >= F.R.L) { F.arrived = true; tr.position.copy(F.stand); }
+      } else {
+        // 消防車雲梯射水
+        tr.rotation.y = Math.atan2(F.face.x - tr.position.x, F.face.z - tr.position.z);
+        if (d < 400) for (let n = 0; n < 3; n++) {
+          const o = new V3(tr.position.x, 3.2, tr.position.z), to = F.face.clone().sub(o), T = 1.0;
+          emit(water, o.x, o.y, o.z, to.x / T + rand(-0.6, 0.6), to.y / T + 4.9 + rand(-0.5, 0.5), to.z / T + rand(-0.6, 0.6), T);
+        }
+        F.hp -= 6 * dt;
+      }
+      // 玩家拎滅火筒 / 消防喉都幫到手
+      { const hose = api.hosing?.(); if (api.spraying() && d < (hose ? 32 : 18)) F.hp -= (hose ? 15 : 9) * dt; }
+      if (F.hp <= 0 && d < 300) api.toast('🚒 消防員救熄咗一場火 👍' + (bfires.filter(f => f.hp > 0).length ? `（仲有 ${bfires.filter(f => f.hp > 0).length} 場）` : ''), 2500);
+      if (d > 1200 || F.t > 300) { tr.visible = false; tr.userData.busy = false; bfires.splice(i, 1); }
+    }
+    if (lit && !fire) { bfLight.position.copy(lit.face); bfLight.intensity = 50 * (0.8 + Math.random() * 0.4); } else bfLight.intensity = 0;
   }
   function endFire() { fire = null; if (!truck.userData.taken) truck.visible = false; crew.forEach(c => c.visible = false); fireLight.intensity = 0; }
 
@@ -234,6 +319,7 @@ export function buildEvents(scene, api) {
     const ok = okZone(p) && !busy;
     if (fire) updateFire(dt, p); else if (ok) { fireT -= dt; if (fireT <= 0) { fireT = rand(150, 240); if (!startFire(p)) fireT = 20; } }
     if (thief) updateThief(dt, p); else if (ok) { thiefT -= dt; if (thiefT <= 0) { thiefT = rand(100, 170); if (!startThief(p)) thiefT = 15; } }
+    if (bfires.length) updateBombFires(dt, p);
     stepP(flame, dt, -1); stepP(smoke, dt, -0.4); stepP(water, dt, 9.8);
     applyKnocks(dt);
   }
@@ -278,5 +364,5 @@ export function buildEvents(scene, api) {
   }
   // 玩家喺唔喺著火大廈下面（樓下 / 門口附近 22 米內）
   const nearFire = p => !!fire && Math.hypot(p.x - fire.face.x, p.z - fire.face.z) < 22 && p.y < 6;
-  return { truck, pcar, knock, steal, giveBack, hoseSpray, nearFire, fireOn: () => !!fire, applyKnocks, update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
+  return { truck, pcar, knock, steal, giveBack, hoseSpray, nearFire, bombHit, bombFires: () => bfires.filter(f => f.hp > 0).length, fireOn: () => !!fire, applyKnocks, update, startFire: () => startFire(api.pos()), startThief: () => startThief(api.pos()), state: () => ({ fire, thief }) };
 }

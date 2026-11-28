@@ -31,6 +31,7 @@ const P = (s) => s.split('|').map(x => x.split('/'));
 export const MACHINES = {
   plane: { zh: '小型飛機', en: 'Small plane', m: () => buildAircraft('plane', '#e53935'), parts: P('🌀/螺旋槳/propeller|🪽/機翼/wing|🦅/尾翼/tail fin|🧑‍✈️/駕駛艙/cockpit|🛞/起落架/landing gear|🔧/引擎/engine|⛽/油箱/fuel tank|🕹/操縱桿/control stick|🪟/擋風玻璃/windscreen|💡/航行燈/navigation light') },
   heli: { zh: '直升機', en: 'Helicopter', m: () => buildAircraft('heli', '#1565c0'), parts: P('🌀/主旋翼/main rotor|🔄/尾旋翼/tail rotor|🦯/尾桁/tail boom|🛷/起落橇/skids|🧑‍✈️/駕駛艙/cockpit|🔧/引擎/engine|🎚/總距桿/collective lever|🕹/循環桿/cyclic stick|⛽/油箱/fuel tank') },
+  apache: { zh: '超級戰鬥直升機', en: 'Attack Helicopter', m: () => buildAircraft('apache', '#4b5320'), parts: P('🌀/四片主旋翼/main rotor|🔄/尾旋翼/tail rotor|🧑‍✈️/前後座駕駛艙/tandem cockpit|🔫/機頭機炮/nose gun|🚀/火箭巢/rocket pod|🪽/短翼/stub wing|🔧/兩部引擎/twin engines|🛞/起落架/landing gear') },
   jumbo: { zh: '巨無霸客機', en: 'Jumbo jet', m: () => buildAircraft('jumbo', '#c62828'), parts: P('🔧/噴射引擎/jet engine|🪽/機翼/wing|🦅/垂直尾翼/vertical stabiliser|🛞/起落架/landing gear|🚪/機艙門/cabin door|💺/乘客座位/passenger seats|🧑‍✈️/駕駛艙/cockpit|🧳/貨艙/cargo hold|🚻/洗手間/toilet') },
   fighter: { zh: '戰鬥機', en: 'Fighter jet', m: () => buildAircraft('fighter', '#607d8b'), parts: P('🔥/後燃器/afterburner|🫧/座艙罩/canopy|🪽/三角翼/delta wing|📡/雷達/radar|💺/彈射座椅/ejection seat|🛞/起落架/landing gear|🔧/噴射引擎/jet engine') },
   taxi: { zh: '的士', en: 'Taxi', m: () => buildTransitModel('taxi'), parts: P('🚖/的士燈/taxi sign|🧾/咪錶/taxi meter|🛞/車轆/wheels|🔦/車頭燈/headlights|🧭/軚盤/steering wheel|💺/座位/seats|🔒/安全帶/seat belt|🪞/倒後鏡/rear-view mirror|🔧/引擎/engine|⛽/石油氣缸/gas tank|🧳/車尾箱/boot') },
@@ -127,8 +128,9 @@ export function buildLearn(api) {
   modal.querySelector('[data-a="x"]').onclick = () => close();
   let curM = null;
   modal.querySelector('[data-a="all"]').onclick = () => curM && curM.parts.forEach(([, zh, en], i) => api.say(`${en}.`, `${zh}（${en}）`, { force: true, gap: 0, key: 'all' + i + Date.now() }));
-  function show(key) {
-    const M = MACHINES[key]; if (!M) return;
+  function show(key) { const M = MACHINES[key]; if (M) showM(M); }
+  // 任何模型（例如五金店買嘅玩具）都可以用呢個視窗欣賞
+  function showM(M) {
     curM = M; open = true;
     modal.querySelector('.lh b').textContent = `🔍 ${M.zh}`; modal.querySelector('.lh small').textContent = M.en;
     list.innerHTML = M.parts.map(([e, zh, en], i) => `<button data-i="${i}"><span class="e">${e}</span><span><b>${zh}</b><i>${en}</i></span></button>`).join('');
@@ -154,5 +156,5 @@ export function buildLearn(api) {
     if (!key) { btn.style.display = 'none'; return; }
     btn.textContent = `🔍 睇內部零件：${MACHINES[key].zh}`; btn.style.display = 'block';
   }
-  return { setNear, show, close, isOpen: () => open };
+  return { setNear, show, view: showM, close, isOpen: () => open };
 }

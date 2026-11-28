@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import * as T from './textures.js';
 import { goldMat, buildAvatar } from './avatar.js';
 import { exhaustFanMesh } from './interiors.js';
+import { TOYS, toyModel } from './toys.js';
 
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 const Z0 = 36, DEPTH = 12, Z1 = Z0 + DEPTH, H = 4.2;
@@ -16,6 +17,7 @@ export const SHOP_LAYOUT = [
   { key: 'parknshop', type: 'market', cx: 18, w: 15, colors: ['#e60012', '#0055a5'], sign: '百佳 PARKnSHOP', act: '🛒 入去購物' },
   { key: 'wellcome', type: 'market', cx: 34.5, w: 15, colors: ['#e2231a', '#ffd400'], sign: '惠康 Wellcome', act: '🛒 入去購物' },
   { key: 'bank', type: 'bank', cx: 50, w: 12, colors: ['#0b4f8a', '#d4af37'], sign: '柏熙銀行 PAK HEI BANK', act: '🏦 銀行櫃位' },
+  { key: 'hardware', type: 'hardware', cx: 63.5, w: 14, colors: ['#e65100', '#fff3e0'], sign: '柏熙五金店 PAK HEI HARDWARE', act: '🧸 睇玩具 / 買嘢' },
 ];
 
 function menuBoardTex(title, items, bg, fg, accent) {
@@ -126,14 +128,53 @@ export function buildShops(scene, api, SHOPS = {}) {
     else if (S.type === 'bar') bar(ctx);
     else if (S.type === 'chinese') chinese(ctx);
     else if (S.type === 'market') market(ctx);
+    else if (S.type === 'hardware') hardware(ctx);
     else bank(ctx);
     spots[S.key] = shopSpots(S, cx, x0, x1);
     // 門口互動（入去之後先開餐牌，銀行除外）
-    const actZ = { fast: Z1 - 4, bar: Z0 + 3.2, chinese: Z0 + 2.2, market: Z0 + 2.4 }[S.type];
+    const actZ = { fast: Z1 - 4, bar: Z0 + 3.2, chinese: Z0 + 2.2, market: Z0 + 2.4, hardware: Z0 + 2.4 }[S.type];
     if (S.type !== 'bank') inter([cx, 0, actZ], 2.6, () => `${S.act}（${name}）`, () => api.openShop(S.key, name, colors));
     else {
       inter([cx, 0, Z1 - 4.2], 2.6, () => '🙋 搵櫃位職員（提錢 / 開保險箱）', () => api.bankTeller(name));
     }
+  }
+
+  // ---------- 柏熙五金店：擺滿柏熙玩具屋嘅玩具（可以買）+ 五金工具 ----------
+  function hardware({ S, cx, x0, x1, c1, c2, box, mesh, sign }) {
+    const wood = std('#8d6e63'), shelfM = std('#cfd8dc', { metalness: 0.4, roughness: 0.4 }), peg = std('#d7b98a');
+    // 兩邊牆：3 層鐵架，每格擺一件玩具
+    const sides = [x0 + 0.55, x1 - 0.55], z0 = Z0 + 1.8, z1 = Z1 - 4.2;
+    let k = 0;
+    sides.forEach((sx, si) => {
+      box(sx - 0.45, 0, z0, sx + 0.45, 0.08, z1, shelfM, true);
+      [0.15, 0.75, 1.35, 1.95].forEach(y => box(sx - 0.45, y, z0, sx + 0.45, y + 0.04, z1, shelfM, false));
+      box(sx + (si ? 0.42 : -0.45), 0, z0, sx + (si ? 0.45 : -0.42), 2.3, z1, shelfM, false);
+      for (let tier = 0; tier < 3; tier++) for (let z = z0 + 0.5; z < z1 - 0.3; z += 1.0) {
+        const t = TOYS[k++ % TOYS.length], m = toyModel(t.id, 0.42);
+        m.position.set(sx, 0.19 + tier * 0.6, z); m.rotation.y = si ? -Math.PI / 2 : Math.PI / 2; scene.add(m);
+      }
+    });
+    // 中間展示枱：大啲嘅模型
+    box(cx + 1.0, 0, Z0 + 3.4, cx + 4.6, 0.8, Z0 + 4.6, wood);   // 擺喺通道右邊，唔阻路
+    [['apache', 1.6], ['fire', 2.8], ['jumbo', 4.0]].forEach(([id, dx]) => { const m = toyModel(id, 0.95); m.position.set(cx + dx, 0.8, Z0 + 4.0); m.rotation.y = 0.6; scene.add(m); });
+    sign('🧸 玩具模型（柏熙玩具屋同款）', '#4a148c', '#ffeb3b', 3.4, 0.42, cx + 2.8, 1.3, Z0 + 3.35, Math.PI);
+    // 後牆：洞洞板掛五金工具
+    box(x0 + 2.2, 0.9, Z1 - 0.25, x1 - 2.2, 2.9, Z1 - 0.2, peg, false);
+    const toolM = [std('#455a64', { metalness: 0.7 }), std('#d32f2f'), std('#fbc02d'), std('#1565c0')];
+    for (let i = 0; i < 9; i++) {
+      const tx = x0 + 2.8 + i * ((S.w - 5.6) / 8), m = toolM[i % 4];
+      if (i % 3 === 0) { box(tx - 0.03, 1.5, Z1 - 0.32, tx + 0.03, 2.2, Z1 - 0.26, std('#6d4c41'), false); box(tx - 0.16, 2.1, Z1 - 0.34, tx + 0.16, 2.24, Z1 - 0.26, m, false); }        // 鎚仔
+      else if (i % 3 === 1) { box(tx - 0.025, 1.4, Z1 - 0.3, tx + 0.025, 2.3, Z1 - 0.27, m, false); box(tx - 0.09, 2.25, Z1 - 0.31, tx + 0.09, 2.35, Z1 - 0.27, m, false); }   // 士巴拿
+      else { box(tx - 0.18, 1.45, Z1 - 0.3, tx + 0.18, 1.6, Z1 - 0.27, m, false); box(tx - 0.03, 1.6, Z1 - 0.3, tx + 0.03, 2.3, Z1 - 0.27, std('#9e9e9e', { metalness: 0.8 }), false); }   // 螺絲批
+    }
+    sign('🔧 五金工具 HARDWARE', '#e65100', '#fff', 3.4, 0.5, cx, 3.3, Z1 - 0.3, Math.PI);
+    // 收銀櫃位 + 店員
+    const cz = Z1 - 3.4;
+    box(cx - 2.4, 0, cz - 0.4, cx + 2.4, 1.0, cz + 0.4, std(c1, { roughness: 0.5 }));
+    mesh(new THREE.BoxGeometry(0.45, 0.15, 0.35), std('#222'), cx + 1.2, 1.08, cz);
+    const clerk = buildAvatar({ gender: 'f', skin: '#e0ac69', hat: 'cap', shirt: '#e65100', pants: '#3e2723', hair: '#3e2723' });
+    clerk.position.set(cx, 0, cz + 1.0); clerk.rotation.y = Math.PI; scene.add(clerk);
+    sign('收銀 CASHIER', '#263238', '#fff', 1.6, 0.35, cx, 2.6, cz + 0.05, Math.PI);
   }
 
   // ---------- 快餐店（麥當勞 / KFC）----------
