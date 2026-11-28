@@ -174,7 +174,9 @@ $('go').onclick = () => {
     if (role === 'member' && token) store.set('member', { name: nm, token });   // 記住呢部機
     pv.run = false; pv.r.dispose();
     $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
-    startGame(nm, role, token);
+    // 先畫出載入畫面，再開始建城市（建城市期間畫面會停一停，但載入畫面已經喺度）
+    loadUI.show(8, '建造城市中…');
+    nextFrame().then(nextFrame).then(() => startGame(nm, role, token));
   };
   const ask = () => askLogin({ store, sfx: { click: () => {} } }, name, (role, token) => enter(role, token));
   // 28 遊樂場帳戶：直接用大廳嘅登入
@@ -217,6 +219,30 @@ showSaved();
   const r = await fetch('api/sso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t, peek: true }) }).then(r => r.json()).catch(() => null);
   if (r && r.ok) { pg.tok = t; pg.name = r.name; showSaved(); }
 })();
+
+// ---------- 入遊戲載入畫面：建城市 + 預先編譯光影 / 上載貼圖，入到去先唔會一頓一頓 ----------
+const loadUI = (() => {
+  let el = null;
+  function show(pct, txt) {
+    if (!el) {
+      el = document.createElement('div'); el.id = 'loadScr';
+      el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:linear-gradient(#0d2a4a,#081627);color:#fff;font-family:system-ui,sans-serif;text-align:center;padding:16px';
+      el.innerHTML = `<style>#loadScr .bar{width:min(420px,80vw);height:16px;border-radius:9px;background:#ffffff22;overflow:hidden;position:relative}
+#loadScr .fill{height:100%;width:0;border-radius:9px;background:linear-gradient(90deg,#ffd54f,#ff9800);transition:width .25s}
+#loadScr .shine{position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff55,transparent);animation:ldShine 1.1s linear infinite}
+@keyframes ldShine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+#loadScr .lift{font-size:54px;animation:ldUp 1.4s ease-in-out infinite alternate} @keyframes ldUp{from{transform:translateY(8px)}to{transform:translateY(-8px)}}</style>
+<div class="lift">🛗</div><b style="font-size:22px">搭 Lift 遊戲</b><div class="bar"><div class="fill"></div><div class="shine"></div></div><div class="txt" style="font-size:15px;opacity:.9"></div><div style="font-size:12px;opacity:.6">第一次入會耐少少，入到去就順暢喇</div>`;
+      document.body.appendChild(el);
+    }
+    el.querySelector('.fill').style.width = Math.round(pct) + '%';
+    el.querySelector('.txt').textContent = `${txt} ${Math.round(pct)}%`;
+  }
+  function hide() { if (!el) return; el.style.transition = 'opacity .4s'; el.style.opacity = '0'; const e = el; el = null; setTimeout(() => e.remove(), 450); }
+  return { show, hide };
+})();
+// 等下一幀（畫面收埋時 requestAnimationFrame 會停，所以 0.1 秒後都會繼續，唔會卡住）
+const nextFrame = () => new Promise(r => { const t = setTimeout(r, 100); requestAnimationFrame(() => { clearTimeout(t); r(); }); });
 
 // ================= 遊戲 =================
 function startGame(myName, role = 'player', memberToken = '') {
@@ -1921,7 +1947,13 @@ function startGame(myName, role = 'player', memberToken = '') {
   const clock = new THREE.Clock();
   const ray = new THREE.Raycaster();
   let elapsed = 0, honkT = 1, learnT = 0; const lastRam = new V3();
-  function loop() { requestAnimationFrame(loop); frame(); }
+  // debug：記錄頭 10 秒每幀用幾耐（比較有冇載入畫面）
+  const ftLog = location.search.includes('debug') ? (window.__ft = []) : null; let ftLast = 0, ftT0 = 0;
+  function loop() {
+    requestAnimationFrame(loop);
+    if (ftLog) { const n = performance.now(); if (!ftT0) ftT0 = n; else if (n - ftT0 < 10000) ftLog.push(+(n - ftLast).toFixed(1)); ftLast = n; }
+    frame();
+  }
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); elapsed += dt;
     const T = net.now();
@@ -2230,5 +2262,31 @@ function startGame(myName, role = 'player', memberToken = '') {
 
     hudT += dt; if (hudT > 0.15) { hudT = 0; updateHUD(inCar); }
   }
-  loop();
+  // ===== 入遊戲前預熱：載入附近街道、預先編譯所有光影（shader）、四個方向各畫一次將貼圖 / 模型上載去 GPU =====
+  // 最少 1.5 秒、最多 8 秒（慢手機唔會卡死喺度）；網址加 ?nowarm 就跳過（用嚟比較）
+  (async () => {
+    // 計時由建好城市之後開始：預熱最少 1.5 秒、最多 8 秒
+    if (location.search.includes('debug')) window.__ldT = {};
+    const t0 = performance.now(), MIN = 1500, MAX = 8000, over = () => performance.now() - t0 > MAX;
+    if (!location.search.includes('nowarm')) {
+      try {
+        loadUI.show(40, '預備附近街道…'); await nextFrame();
+        city.loadAll(P.pos);   // 先唔好畫（第一次畫會即刻逐個編譯光影，好卡），等下面一次過預先編譯
+        loadUI.show(55, '預備光影同材質…'); await nextFrame();
+        if (window.__ldT) window.__ldT.compile0 = performance.now() - t0;
+        if (renderer.compileAsync) await Promise.race([renderer.compileAsync(scene, camera), new Promise(r => setTimeout(r, Math.max(500, MAX - (performance.now() - t0) - 2000)))]);
+        else renderer.compile(scene, camera);
+        if (window.__ldT) window.__ldT.compile1 = performance.now() - t0;
+        // 四個方向各畫一幀（只係 4 幀，慢機都值得做）
+        const y0 = camYaw;
+        for (let k = 0; k < 4; k++) { loadUI.show(65 + k * 8, '載入四周景物…'); await nextFrame(); camYaw = y0 + k * Math.PI / 2; frame(); }
+        camYaw = y0; frame();
+        if (window.__ldT) window.__ldT.dirs = performance.now() - t0;
+      } catch (e) { console.warn('預熱失敗（照樣入遊戲）', e); }
+      while (performance.now() - t0 < MIN && !over()) { loadUI.show(100, '準備好喇！'); await nextFrame(); }
+    }
+    loadUI.show(100, '準備好喇！'); loadUI.hide();
+    clock.getDelta();   // 唔好將載入時間當成第一幀
+    loop();
+  })();
 }
